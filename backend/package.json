@@ -1,0 +1,23 @@
+{
+  "name": "career-ai-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.1",
+    "groq-sdk": "^1.2.0",
+    "multer": "^2.1.1",
+    "nodemailer": "^8.0.7",
+    "openai": "^6.36.0",
+    "pdfjs-dist": "^5.7.284"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

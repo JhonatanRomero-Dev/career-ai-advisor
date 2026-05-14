@@ -1,0 +1,93 @@
+{
+  "name": "ResumeAnalysis",
+  "type": "object",
+  "properties": {
+    "file_name": {
+      "type": "string",
+      "description": "Name of the uploaded file"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "URL of the uploaded resume file"
+    },
+    "ats_score": {
+      "type": "number",
+      "description": "ATS compatibility score 0-100"
+    },
+    "clarity_score": {
+      "type": "number",
+      "description": "Professional clarity score 0-100"
+    },
+    "market_compatibility": {
+      "type": "number",
+      "description": "Market compatibility score 0-100"
+    },
+    "weak_words": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of weak words found"
+    },
+    "missing_keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Missing important keywords"
+    },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Improvement suggestions"
+    },
+    "recommended_jobs": {
+      "type": "array",
+      "description": "Recommended jobs based on profile",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "company": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "match_percentage": {
+            "type": "number"
+          },
+          "match_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "improvement_tips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "processing",
+        "completed",
+        "failed"
+      ],
+      "default": "processing"
+    }
+  },
+  "required": [
+    "file_name",
+    "file_url"
+  ]
+}
