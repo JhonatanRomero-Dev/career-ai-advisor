@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { hasValidAuthSession } from "@/lib/authSession";
 
 const DefaultFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center">
@@ -10,12 +11,11 @@ export default function ProtectedRoute({
   fallback = <DefaultFallback />
 }) {
 
-  const logged = localStorage.getItem("logged");
   const location = useLocation();
+  const nextPath = `${location.pathname}${location.search || ""}`;
 
-  // loading fake opcional
-  if (logged === null) {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!hasValidAuthSession()) {
+    return <Navigate to={`/login?next=${encodeURIComponent(nextPath)}`} replace />;
   }
 
   return <Outlet />;

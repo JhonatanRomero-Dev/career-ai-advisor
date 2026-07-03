@@ -1,20 +1,20 @@
-import React from "react";
+import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Sparkles, Zap } from "lucide-react";
-import { Link } from "react-router-dom";
+import PaymentModal from "@/components/payment/PaymentModal";
 
 const plans = [
   {
-    name: "Gratis",
+    name: "Grátis",
     price: "R$0",
-    period: "/mes",
-    description: "Otimo para comecar",
+    period: "/mês",
+    description: "Ótimo para começar",
     features: [
-      "3 analises de curriculo por mes",
-      "Nota ATS basica",
-      "5 recomendacoes de vagas",
-      "Analise de palavras-chave ausentes",
+      "3 análises de currículo por mês",
+      "Nota ATS básica",
+      "8 recomendações de vagas",
+      "Análise de palavras-chave ausentes",
     ],
     cta: "Plano atual",
     ctaVariant: "outline",
@@ -23,16 +23,16 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "R$19",
-    period: "/mes",
-    description: "Para quem leva a busca a serio",
+    price: "R$29",
+    period: "/mês",
+    description: "Para quem leva a busca a sério",
     features: [
-      "Analises de curriculo ilimitadas",
-      "Insights e palavras-chave avancados",
-      "Vagas compativeis ilimitadas",
-      "Gerador de curriculo com IA",
+      "Análises de currículo ilimitadas",
+      "Insights e palavras-chave avançados",
+      "Vagas compatíveis ilimitadas",
+      "Gerador de currículo com IA",
       "Acompanhamento de progresso ATS",
-      "Suporte prioritario",
+      "Suporte prioritário",
     ],
     cta: "Assinar Pro",
     ctaVariant: "default",
@@ -40,12 +40,38 @@ const plans = [
     highlight: true,
     badge: "MAIS POPULAR",
   },
+  {
+    name: "Premium",
+    price: "R$59",
+    period: "/mês",
+    description: "Para acelerar sua preparação",
+    features: [
+      "Tudo do plano Pro",
+      "Otimização de currículo por vaga",
+      "Simulação de entrevista com IA",
+      "Prioridade em novos recursos",
+    ],
+    cta: "Assinar Premium",
+    ctaVariant: "default",
+    disabled: false,
+    highlight: false,
+  },
 ];
 
 export default function UpgradeModal({ open, onClose }) {
+  const [paymentPlan, setPaymentPlan] = useState(null);
+  const [showPayment, setShowPayment] = useState(false);
+
+  const openPayment = (plan) => {
+    setPaymentPlan(plan);
+    setShowPayment(true);
+    onClose();
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl p-0 overflow-hidden">
+      <DialogContent className="max-w-4xl p-0 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-8 pt-8 pb-6 border-b border-border/50">
           <DialogHeader>
@@ -65,7 +91,7 @@ export default function UpgradeModal({ open, onClose }) {
         </div>
 
         {/* Plans */}
-        <div className="grid sm:grid-cols-2 gap-4 p-6">
+        <div className="grid gap-4 p-6 sm:grid-cols-3">
           {plans.map((plan) => (
             <div
               key={plan.name}
@@ -107,11 +133,9 @@ export default function UpgradeModal({ open, onClose }) {
                   {plan.cta}
                 </Button>
               ) : (
-                <Link to="/" onClick={onClose}>
-                  <Button className="w-full gap-2">
-                    <Zap className="w-4 h-4" /> {plan.cta}
-                  </Button>
-                </Link>
+                <Button className="w-full gap-2" onClick={() => openPayment(plan)}>
+                  <Zap className="w-4 h-4" /> {plan.cta}
+                </Button>
               )}
             </div>
           ))}
@@ -122,5 +146,11 @@ export default function UpgradeModal({ open, onClose }) {
         </p>
       </DialogContent>
     </Dialog>
+    <PaymentModal
+      open={showPayment}
+      onOpenChange={setShowPayment}
+      plan={paymentPlan}
+    />
+    </>
   );
 }

@@ -52,14 +52,14 @@ export default function ATSProgressChart({ analyses = [] }) {
   const TrendIcon = diff > 0 ? TrendingUp : diff < 0 ? TrendingDown : Minus;
   const trendColor = diff > 0 ? "text-emerald-600" : diff < 0 ? "text-destructive" : "text-muted-foreground";
   const trendBg = diff > 0 ? "bg-emerald-500/10" : diff < 0 ? "bg-destructive/10" : "bg-muted";
-  const trendLabel = diff > 0 ? `+${pct}% de melhoria` : diff < 0 ? `-${pct}% de queda` : "Estavel";
+  const trendLabel = diff > 0 ? `+${pct}% de melhoria` : diff < 0 ? `-${pct}% de queda` : "Estável";
 
   return (
     <Card className="p-6 border-border/50">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="font-semibold text-foreground">Progresso da nota ATS</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Evolucao em {completed.length} analises</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Evolução em {completed.length} análises</p>
         </div>
         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${trendBg}`}>
           <TrendIcon className={`w-3.5 h-3.5 ${trendColor}`} />

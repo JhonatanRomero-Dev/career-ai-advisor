@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
 import { Card } from "@/components/ui/card";
 import { CheckCircle2, Circle, ListChecks, Trophy } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function ImprovementTasks({ suggestions = [], analysisId }) {
   const storageKey = `tasks_${analysisId}`;
+  const canSync = Boolean(analysisId && !String(analysisId).startsWith("local-"));
 
   const [checked, setChecked] = useState(() => {
     try {
@@ -14,13 +17,36 @@ export default function ImprovementTasks({ suggestions = [], analysisId }) {
       return {};
     }
   });
+  const { data: remoteTasks } = useQuery({
+    queryKey: ["analysis-tasks", analysisId],
+    queryFn: () => base44.analysis.getTasks(analysisId),
+    enabled: canSync,
+    staleTime: 30000,
+  });
+  const updateTasksMutation = useMutation({
+    mutationFn: (nextChecked) => base44.analysis.updateTasks(analysisId, nextChecked),
+  });
+
+  useEffect(() => {
+    if (remoteTasks?.checked) {
+      setChecked(remoteTasks.checked);
+    }
+  }, [remoteTasks]);
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(checked));
   }, [checked, storageKey]);
 
   const toggle = (index) => {
-    setChecked((prev) => ({ ...prev, [index]: !prev[index] }));
+    setChecked((prev) => {
+      const next = { ...prev, [index]: !prev[index] };
+
+      if (canSync) {
+        updateTasksMutation.mutate(next);
+      }
+
+      return next;
+    });
   };
 
   const completedCount = suggestions.filter((_, i) => checked[i]).length;
@@ -38,7 +64,7 @@ export default function ImprovementTasks({ suggestions = [], analysisId }) {
           </div>
           <div>
             <h3 className="font-semibold text-foreground">Melhorias pendentes</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{completedCount} de {total} concluidas</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{completedCount} de {total} concluídas</p>
           </div>
         </div>
         <span className="text-sm font-bold text-primary">{progress}%</span>
@@ -65,7 +91,7 @@ export default function ImprovementTasks({ suggestions = [], analysisId }) {
           >
             <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-4">
               <Trophy className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <p className="text-sm font-medium text-emerald-700">Todas as melhorias foram concluidas! Envie um novo curriculo para ver o impacto.</p>
+              <p className="text-sm font-medium text-emerald-700">Todas as melhorias foram concluídas! Envie um novo currículo para ver o impacto.</p>
             </div>
           </motion.div>
         )}

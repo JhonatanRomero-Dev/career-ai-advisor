@@ -90,7 +90,7 @@ export default function SplashScreen() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25, duration: 0.55 }}
         >
-          Sua jornada profissional esta sendo preparada
+          Sua jornada profissional está sendo preparada
         </motion.h1>
 
         <div className="mt-9 w-full">
@@ -127,7 +127,7 @@ export default function SplashScreen() {
           </div>
 
           <p className="mt-4 text-xs font-medium text-muted-foreground">
-            Carregando experiencia personalizada...
+            Carregando experiência personalizada...
           </p>
         </div>
       </div>

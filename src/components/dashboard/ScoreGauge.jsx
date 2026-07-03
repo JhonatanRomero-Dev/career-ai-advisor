@@ -1,11 +1,26 @@
 import React from "react";
 import { motion } from "framer-motion";
 
-export default function ScoreGauge({ score, label, size = 140 }) {
+function getScoreStatus(score) {
+  const value = Number(score || 0);
+
+  if (value >= 80) {
+    return { label: "Boa base", className: "text-emerald-600" };
+  }
+
+  if (value >= 60) {
+    return { label: "Há espaço para melhorar", className: "text-primary" };
+  }
+
+  return { label: "Prioridade de revisão", className: "text-amber-600" };
+}
+
+export default function ScoreGauge({ score, label, description, size = 140 }) {
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = ((score || 0) / 100) * circumference;
   const strokeWidth = 8;
+  const status = getScoreStatus(score);
 
   const getColor = (s) => {
     if (s >= 80) return "hsl(160, 60%, 45%)";
@@ -15,7 +30,7 @@ export default function ScoreGauge({ score, label, size = 140 }) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-1.5 text-center">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle
@@ -53,6 +68,8 @@ export default function ScoreGauge({ score, label, size = 140 }) {
         </div>
       </div>
       {label && <p className="text-xs font-medium text-muted-foreground">{label}</p>}
+      <p className={`text-[11px] font-semibold ${status.className}`}>{status.label}</p>
+      {description && <p className="max-w-44 text-[11px] leading-relaxed text-muted-foreground">{description}</p>}
     </div>
   );
 }

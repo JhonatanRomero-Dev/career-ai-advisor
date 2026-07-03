@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "smoke:upload": "node scripts/smoke-upload.js",
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -13,7 +15,7 @@
     "express": "^4.22.1",
     "groq-sdk": "^1.2.0",
     "multer": "^2.1.1",
-    "nodemailer": "^8.0.7",
+    "nodemailer": "^9.0.1",
     "openai": "^6.36.0",
     "pdfjs-dist": "^5.7.284"
   },

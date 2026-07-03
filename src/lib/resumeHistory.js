@@ -10,7 +10,7 @@ const parseHistory = () => {
     const parsed = stored ? JSON.parse(stored) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error("Erro ao carregar historico local:", error);
+    console.error("Erro ao carregar histórico local:", error);
     return [];
   }
 };
@@ -18,7 +18,7 @@ const parseHistory = () => {
 export const getStoredResumeHistory = () => parseHistory();
 
 export const saveResumeHistoryEntry = ({ file, analysis }) => {
-  const fileName = file?.name || analysis?.file_name || "Curriculo enviado";
+  const fileName = file?.name || analysis?.file_name || "Currículo enviado";
   const now = new Date().toISOString();
 
   const entry = {
@@ -49,7 +49,7 @@ export const mergeResumeHistory = (remoteAnalyses = [], localAnalyses = []) => {
       status: "completed",
       ...analysis,
       id,
-      file_name: analysis.file_name || "Curriculo enviado",
+      file_name: analysis.file_name || "Currículo enviado",
       created_date: analysis.created_date || new Date().toISOString(),
     });
   });

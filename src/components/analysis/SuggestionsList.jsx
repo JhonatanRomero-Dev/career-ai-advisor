@@ -8,7 +8,7 @@ export default function SuggestionsList({ suggestions = [] }) {
     <div>
       <div className="flex items-center gap-2 mb-3">
         <Lightbulb className="w-4 h-4 text-yellow-500" />
-        <h3 className="text-sm font-semibold text-foreground">Sugestoes de melhoria</h3>
+        <h3 className="text-sm font-semibold text-foreground">Sugestões de melhoria</h3>
       </div>
       <ul className="space-y-2">
         {suggestions.map((s, i) => (
