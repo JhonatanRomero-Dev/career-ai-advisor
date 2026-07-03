@@ -6,6 +6,7 @@
     "dev": "nodemon server.js",
     "smoke:upload": "node scripts/smoke-upload.js",
     "start": "node server.js",
+    "test:email": "node scripts/check-email.js",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

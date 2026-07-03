@@ -1,18 +1,62 @@
 import nodemailer from "nodemailer";
 
-function hasSmtpConfig() {
-  return Boolean(
-    process.env.SMTP_HOST &&
-      process.env.SMTP_PORT &&
-      process.env.SMTP_USER &&
-      process.env.SMTP_PASS
-  );
+const REQUIRED_SMTP_CONFIG = [
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_PASS"
+];
+
+function getSmtpConfig() {
+  const host = String(process.env.SMTP_HOST || "").trim();
+  const port = Number(process.env.SMTP_PORT || 0);
+  const user = String(process.env.SMTP_USER || "").trim();
+  const rawPass = String(process.env.SMTP_PASS || "");
+  const pass = host.includes("gmail.com") ? rawPass.replace(/\s+/g, "") : rawPass;
+  const secure = process.env.SMTP_SECURE
+    ? process.env.SMTP_SECURE === "true"
+    : port === 465;
+
+  return {
+    host,
+    port,
+    secure,
+    user,
+    pass,
+    from: process.env.SMTP_FROM || user
+  };
 }
 
-function createEmailUnavailableError() {
+function getMissingSmtpConfig() {
+  return REQUIRED_SMTP_CONFIG.filter((key) => !String(process.env[key] || "").trim());
+}
+
+function hasSmtpConfig() {
+  const config = getSmtpConfig();
+
+  return getMissingSmtpConfig().length === 0 && Number.isFinite(config.port) && config.port > 0;
+}
+
+function createEmailUnavailableError(reason = "SMTP_UNAVAILABLE", details = {}) {
   const error = new Error("Serviço de e-mail indisponível");
   error.statusCode = 503;
+  error.reason = reason;
+  Object.assign(error, details);
   return error;
+}
+
+export function getEmailConfigSummary() {
+  const config = getSmtpConfig();
+
+  return {
+    configured: hasSmtpConfig(),
+    missing: getMissingSmtpConfig(),
+    host: config.host || null,
+    port: config.port || null,
+    secure: config.secure,
+    user: config.user ? config.user.replace(/^(.{2}).*(@.*)$/, "$1***$2") : null,
+    from: config.from || null
+  };
 }
 
 function canUseDevEmailFallback() {
@@ -60,22 +104,25 @@ async function sendCodeEmail({ email, code, subject, heading, intro }) {
       return createDevEmailDelivery({ email, code, subject });
     }
 
-    throw createEmailUnavailableError();
+    throw createEmailUnavailableError("SMTP_CONFIG_MISSING", {
+      missing: getMissingSmtpConfig()
+    });
   }
 
+  const config = getSmtpConfig();
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_SECURE === "true",
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
+      user: config.user,
+      pass: config.pass
     }
   });
 
   try {
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      from: config.from,
       to: email,
       subject,
       text: `Seu código de verificação é: ${code}. Ele expira em 10 minutos.`,
@@ -94,8 +141,10 @@ async function sendCodeEmail({ email, code, subject, heading, intro }) {
       return createDevEmailDelivery({ email, code, subject });
     }
 
-    error.statusCode = 503;
-    throw error;
+    throw createEmailUnavailableError("SMTP_SEND_FAILED", {
+      cause: error,
+      smtpMessage: error.message
+    });
   }
 
   return {

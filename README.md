@@ -57,6 +57,7 @@ Default URLs:
 - Auth data is stored in SQLite. User passwords are saved as salted hashes, and verification/reset codes are saved as hashes with expiration.
 - Configure SMTP before testing with real users. Without SMTP, auth code requests fail by default.
 - For local-only auth testing without SMTP, set `ALLOW_DEV_EMAIL_FALLBACK=true` to print codes in the backend console. Set `EXPOSE_DEV_AUTH_CODE=true` and `VITE_SHOW_DEV_AUTH_CODE=true` only if you intentionally want the app to show test codes.
+- To test SMTP directly, run `cd backend && npm run test:email -- your@email.com`. For Gmail, use an app password in `SMTP_PASS`, not your normal account password.
 - In production, configure `AUTH_CODE_SECRET`, `OAUTH_STATE_SECRET`, SMTP, CORS and the frontend URL.
 - `PAYMENT_GATEWAY=mercadopago` enables real checkout when `MERCADO_PAGO_ACCESS_TOKEN` is configured.
 - `MERCADO_PAGO_WEBHOOK_SECRET` validates payment notifications before activating paid plans.

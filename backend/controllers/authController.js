@@ -343,11 +343,31 @@ function sendRateLimitResponse(res) {
   });
 }
 
+function getEmailUnavailableMessage(error) {
+  if (process.env.NODE_ENV === "production") {
+    return EMAIL_UNAVAILABLE_ERROR;
+  }
+
+  if (error.reason === "SMTP_CONFIG_MISSING") {
+    const missing = Array.isArray(error.missing) && error.missing.length
+      ? ` Faltando: ${error.missing.join(", ")}.`
+      : "";
+
+    return `SMTP nao configurado no backend/.env.${missing}`;
+  }
+
+  if (error.reason === "SMTP_SEND_FAILED") {
+    return `Falha ao enviar pelo SMTP. Confira usuario, senha de app, host e porta. ${error.smtpMessage || ""}`.trim();
+  }
+
+  return EMAIL_UNAVAILABLE_ERROR;
+}
+
 function getSafeErrorResponse(error) {
   if (error.statusCode === 503) {
     return {
       status: 503,
-      message: EMAIL_UNAVAILABLE_ERROR
+      message: getEmailUnavailableMessage(error)
     };
   }
 
