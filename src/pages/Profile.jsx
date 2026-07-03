@@ -164,7 +164,7 @@ async function fetchBrazilianCityOptions() {
   const response = await fetch(BRAZILIAN_CITIES_API_URL);
 
   if (!response.ok) {
-    throw new Error("Nao foi possivel carregar cidades.");
+    throw new Error("Não foi possível carregar cidades.");
   }
 
   const cityData = await response.json();
@@ -322,7 +322,7 @@ function LocationAutocomplete({ hasError, isLoading, onChange, options, value })
   };
 
   const helperText = hasError
-    ? "Sugestoes locais carregadas; voce ainda pode digitar livremente."
+    ? "Sugestões locais carregadas; você ainda pode digitar livremente."
     : isLoading
       ? "Carregando cidades do IBGE..."
       : "Digite ao menos 2 letras para ver cidades e estados.";

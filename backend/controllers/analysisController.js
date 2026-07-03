@@ -944,6 +944,16 @@ export async function analyzeResume(req, res) {
     const filePath = req.file.path;
     const accountEmail = normalizeEmail(req.user?.email);
     const accountPlan = getUserSubscription(req.user.id).plan;
+    const hasPrivacyConsent = String(req.body.privacyConsent || "").toLowerCase() === "true";
+
+    if (!hasPrivacyConsent) {
+      removeUploadedFile(filePath);
+
+      return res.status(400).json({
+        success: false,
+        error: "Autorize o processamento do currículo para gerar a análise."
+      });
+    }
 
     if (!accountEmail) {
       removeUploadedFile(filePath);

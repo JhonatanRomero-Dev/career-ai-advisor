@@ -132,6 +132,8 @@ try {
     }),
     "teste-upload.docx"
   );
+  form.append("privacyConsent", "true");
+
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: {

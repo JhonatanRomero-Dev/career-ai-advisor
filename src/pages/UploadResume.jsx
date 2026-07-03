@@ -25,6 +25,7 @@ export default function UploadResume() {
   const [uploadError, setUploadError] = useState("");
   const [targetJobTitle, setTargetJobTitle] = useState("");
   const [targetJobDescription, setTargetJobDescription] = useState("");
+  const [hasPrivacyConsent, setHasPrivacyConsent] = useState(false);
   const navigate = useNavigate();
   const uploadTimeoutMs = 90000;
   const currentUser = getStoredCurrentUser();
@@ -79,6 +80,11 @@ export default function UploadResume() {
         return;
       }
 
+      if (!hasPrivacyConsent) {
+        setUploadError("Autorize o processamento do currículo para continuar.");
+        return;
+      }
+
       setIsUploading(true);
       setLimitMessage("");
       setUploadError("");
@@ -92,6 +98,7 @@ export default function UploadResume() {
       }
 
       formData.append("resume", file);
+      formData.append("privacyConsent", "true");
 
       if (targetJobTitle.trim()) {
         formData.append("targetJobTitle", targetJobTitle.trim());
@@ -266,11 +273,27 @@ export default function UploadResume() {
             </div>
           </div>
 
+          <label className="mb-5 flex items-start gap-3 rounded-lg border border-border/60 bg-background p-4 text-sm leading-relaxed text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={hasPrivacyConsent}
+              onChange={(event) => {
+                setHasPrivacyConsent(event.target.checked);
+                setUploadError("");
+              }}
+              disabled={isUploading}
+              className="mt-1 h-4 w-4 rounded border-border accent-primary"
+            />
+            <span>
+              Autorizo o processamento temporário do meu currículo para gerar a análise, recomendações e histórico da minha conta. Posso excluir análises salvas quando quiser.
+            </span>
+          </label>
+
           <UploadZone
             onFileSelect={handleFileSelect}
             isUploading={isUploading}
-            disabled={reachedMonthlyLimit}
-            disabledMessage="Limite mensal atingido"
+            disabled={reachedMonthlyLimit || !hasPrivacyConsent}
+            disabledMessage={reachedMonthlyLimit ? "Limite mensal atingido" : "Autorize o uso do currículo"}
           />
 
           {limitMessage && (

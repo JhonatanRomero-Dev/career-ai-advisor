@@ -13,7 +13,7 @@ const summary = getEmailConfigSummary();
 console.log("SMTP config:", JSON.stringify(summary, null, 2));
 
 if (!to) {
-  console.error("Informe um email de destino: npm run test:email -- voce@email.com");
+  console.error("Informe um e-mail de destino: npm run test:email -- seu-email@exemplo.com");
   process.exit(1);
 }
 

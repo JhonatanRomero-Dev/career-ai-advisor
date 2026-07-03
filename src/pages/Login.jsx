@@ -869,7 +869,7 @@ export default function Login() {
                     <div className="flex gap-2">
                       <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                       <p>
-                        Enviaremos um codigo temporario para o e-mail cadastrado.
+                        Enviaremos um código temporário para o e-mail cadastrado.
                       </p>
                     </div>
                   </div>
@@ -1046,7 +1046,7 @@ export default function Login() {
                 : step === "password-request"
                   ? "Use o e-mail cadastrado na sua conta."
                   : step === "password-reset"
-                    ? "Depois de redefinir, voce entra automaticamente."
+                    ? "Depois de redefinir, você entra automaticamente."
                 : "Para analisar um currículo, confirme seu acesso primeiro."}
             </p>
           </Card>

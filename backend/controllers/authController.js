@@ -353,11 +353,11 @@ function getEmailUnavailableMessage(error) {
       ? ` Faltando: ${error.missing.join(", ")}.`
       : "";
 
-    return `SMTP nao configurado no backend/.env.${missing}`;
+    return `SMTP não configurado no backend/.env.${missing}`;
   }
 
   if (error.reason === "SMTP_SEND_FAILED") {
-    return `Falha ao enviar pelo SMTP. Confira usuario, senha de app, host e porta. ${error.smtpMessage || ""}`.trim();
+    return `Falha ao enviar pelo SMTP. Confira usuário, senha de app, host e porta. ${error.smtpMessage || ""}`.trim();
   }
 
   return EMAIL_UNAVAILABLE_ERROR;

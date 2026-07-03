@@ -298,7 +298,7 @@ export function getSubscription(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: "Nao foi possivel carregar sua assinatura."
+      error: "Não foi possível carregar sua assinatura."
     });
   }
 }
@@ -310,7 +310,7 @@ export async function createCheckout(req, res) {
     if (!ALLOWED_PLANS.has(plan) || !PAID_PLANS.has(plan)) {
       return res.status(400).json({
         success: false,
-        error: "Escolha um plano pago valido para continuar."
+        error: "Escolha um plano pago válido para continuar."
       });
     }
 
@@ -330,7 +330,7 @@ export async function createCheckout(req, res) {
         const checkoutUrl = getMercadoPagoCheckoutUrl(preference);
 
         if (!checkoutUrl) {
-          throw new Error("Mercado Pago nao retornou URL de checkout.");
+          throw new Error("Mercado Pago não retornou URL de checkout.");
         }
 
         const updatedCheckout = updateSubscriptionCheckoutProviderData(checkout.id, {
@@ -361,14 +361,14 @@ export async function createCheckout(req, res) {
     if (configuredGateway && configuredGateway !== "mercadopago") {
       return res.status(501).json({
         success: false,
-        error: `Gateway de pagamento nao suportado: ${configuredGateway}.`
+        error: `Gateway de pagamento não suportado: ${configuredGateway}.`
       });
     }
 
     if (!allowDemoCheckout) {
       return res.status(501).json({
         success: false,
-        error: "Gateway de pagamento nao configurado. Configure MERCADO_PAGO_ACCESS_TOKEN no backend ou ative ALLOW_DEMO_CHECKOUT=true apenas para testes locais."
+        error: "Gateway de pagamento não configurado. Configure MERCADO_PAGO_ACCESS_TOKEN no backend ou ative ALLOW_DEMO_CHECKOUT=true apenas para testes locais."
       });
     }
 
@@ -387,7 +387,7 @@ export async function createCheckout(req, res) {
 
     return res.status(502).json({
       success: false,
-      error: error.message || "Nao foi possivel iniciar o checkout."
+      error: error.message || "Não foi possível iniciar o checkout."
     });
   }
 }
@@ -406,7 +406,7 @@ export function activateDemoSubscription(req, res) {
     if (!ALLOWED_PLANS.has(plan) || !PAID_PLANS.has(plan)) {
       return res.status(400).json({
         success: false,
-        error: "Escolha um plano pago valido para continuar."
+        error: "Escolha um plano pago válido para continuar."
       });
     }
 
@@ -419,7 +419,7 @@ export function activateDemoSubscription(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: "Nao foi possivel ativar sua assinatura."
+      error: "Não foi possível ativar sua assinatura."
     });
   }
 }
@@ -429,7 +429,7 @@ export async function handleMercadoPagoWebhook(req, res) {
     if (!isMercadoPagoConfigured()) {
       return res.status(501).json({
         success: false,
-        error: "Mercado Pago nao esta configurado."
+        error: "Mercado Pago não está configurado."
       });
     }
 
@@ -494,7 +494,7 @@ export async function handleMercadoPagoWebhook(req, res) {
 
     return res.status(500).json({
       success: false,
-      error: "Nao foi possivel processar o webhook de pagamento."
+      error: "Não foi possível processar o webhook de pagamento."
     });
   }
 }
