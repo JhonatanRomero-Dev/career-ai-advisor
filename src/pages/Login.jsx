@@ -223,6 +223,26 @@ export default function Login() {
     }));
   };
 
+  const openPasswordResetRequest = () => {
+    setMode("login");
+    setStep("password-request");
+    setVisiblePasswords({
+      password: false,
+      confirmPassword: false,
+      newPassword: false,
+    });
+    setError("");
+    setNotice("");
+    setForm((current) => ({
+      ...current,
+      password: "",
+      code: "",
+      resetCode: "",
+      newPassword: "",
+      confirmPassword: "",
+    }));
+  };
+
   const formatCodeNotice = (message, response) => {
     const canShowDevCode =
       import.meta.env.DEV && import.meta.env.VITE_SHOW_DEV_AUTH_CODE === "true";
@@ -357,7 +377,8 @@ export default function Login() {
     }
   };
 
-  const requestPasswordReset = async () => {
+  const requestPasswordReset = async (event) => {
+    event?.preventDefault();
     const email = form.email.trim().toLowerCase();
 
     if (!EMAIL_REGEX.test(email)) {
@@ -451,14 +472,18 @@ export default function Login() {
   const cardTitle =
     step === "verification"
       ? "Confirme seu e-mail"
-      : step === "password-reset"
+      : step === "password-request"
         ? "Recuperar senha"
+      : step === "password-reset"
+        ? "Nova senha"
         : isRegistering
           ? "Criar conta"
           : "Entrar na conta";
   const cardDescription =
     step === "verification"
       ? "Digite o código enviado para o seu e-mail."
+      : step === "password-request"
+        ? "Informe seu e-mail para receber um código de recuperação."
       : step === "password-reset"
         ? "Crie uma nova senha usando o código enviado."
         : isRegistering
@@ -467,6 +492,8 @@ export default function Login() {
   const submitLabel = isSubmitting
     ? step === "verification"
       ? "Verificando..."
+      : step === "password-request"
+        ? "Enviando código..."
       : step === "password-reset"
         ? "Redefinindo..."
         : isRegistering
@@ -474,6 +501,8 @@ export default function Login() {
           : "Entrando..."
     : step === "verification"
       ? "Verificar código"
+      : step === "password-request"
+        ? "Enviar código"
       : step === "password-reset"
         ? "Redefinir senha"
         : isRegistering
@@ -561,6 +590,8 @@ export default function Login() {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
                 {isRegistering && step === "credentials" ? (
                   <UserPlus className="h-6 w-6" />
+                ) : step === "password-request" ? (
+                  <Mail className="h-6 w-6" />
                 ) : (
                   <Lock className="h-6 w-6" />
                 )}
@@ -599,7 +630,13 @@ export default function Login() {
             )}
 
             <form
-              onSubmit={step === "password-reset" ? confirmPasswordReset : handleSubmit}
+              onSubmit={
+                step === "password-request"
+                  ? requestPasswordReset
+                  : step === "password-reset"
+                    ? confirmPasswordReset
+                    : handleSubmit
+              }
               className="space-y-5"
             >
               {step === "credentials" ? (
@@ -691,7 +728,7 @@ export default function Login() {
                         <button
                           type="button"
                           className="text-xs font-medium text-primary hover:underline"
-                          onClick={requestPasswordReset}
+                          onClick={openPasswordResetRequest}
                           disabled={isSubmitting}
                         >
                           Esqueci minha senha
@@ -825,6 +862,45 @@ export default function Login() {
                       Reenviar código
                     </button>
                   </div>
+                </div>
+              ) : step === "password-request" ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
+                    <div className="flex gap-2">
+                      <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                      <p>
+                        Enviaremos um codigo temporario para o e-mail cadastrado.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="resetEmail">E-mail</Label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="resetEmail"
+                        type="email"
+                        value={form.email}
+                        onChange={(event) => handleChange("email", event.target.value)}
+                        placeholder="seu@email.com"
+                        className="h-11 pl-9"
+                        autoComplete="email"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setStep("credentials");
+                      setNotice("");
+                      setError("");
+                    }}
+                  >
+                    Voltar ao login
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -967,6 +1043,10 @@ export default function Login() {
                 ? isRegistering
                   ? "Já tem conta? Use a opção Entrar acima."
                   : "Não tem conta? Use a opção Criar conta acima."
+                : step === "password-request"
+                  ? "Use o e-mail cadastrado na sua conta."
+                  : step === "password-reset"
+                    ? "Depois de redefinir, voce entra automaticamente."
                 : "Para analisar um currículo, confirme seu acesso primeiro."}
             </p>
           </Card>

@@ -1079,7 +1079,10 @@ export function resetPasswordWithCode(email, code, password) {
     WHERE email = ?
   `).run(hashPassword(password), now, normalizedEmail);
 
-  return getUserByEmail(user.email);
+  const updatedUser = getUserByEmail(user.email);
+  revokeAuthSessionsForUser(updatedUser?.id);
+
+  return updatedUser;
 }
 
 export function verifyEmailCode(email, code) {
@@ -1298,6 +1301,20 @@ export function revokeAuthSession(token) {
     SET revoked_at = ?
     WHERE token_hash = ? AND revoked_at IS NULL
   `).run(now, hashSessionToken(token));
+}
+
+export function revokeAuthSessionsForUser(userId) {
+  if (!userId) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE auth_sessions
+    SET revoked_at = ?
+    WHERE user_id = ? AND revoked_at IS NULL
+  `).run(now, userId);
 }
 
 export function getAnalysisTasksForAccount(analysisId, accountEmail) {

@@ -56,6 +56,68 @@ test("health endpoint responds", async () => {
   assert.equal(data.status, "ok");
 });
 
+test("password reset updates password and revokes previous sessions", async () => {
+  const email = `reset-${Date.now()}@example.com`;
+  const password = "old-password-123";
+  const newPassword = "new-password-456";
+
+  const register = await postJson("/api/auth/register", {
+    name: "Reset User",
+    email,
+    password
+  });
+
+  assert.equal(register.response.status, 201);
+  assert.match(register.data.dev_code, /^\d{6}$/);
+
+  const verify = await postJson("/api/auth/verify-code", {
+    email,
+    code: register.data.dev_code
+  });
+
+  assert.equal(verify.response.status, 200);
+  assert.ok(verify.data.token);
+
+  const resetRequest = await postJson("/api/auth/request-password-reset", {
+    email
+  });
+
+  assert.equal(resetRequest.response.status, 200);
+  assert.match(resetRequest.data.dev_code, /^\d{6}$/);
+
+  const reset = await postJson("/api/auth/reset-password", {
+    email,
+    code: resetRequest.data.dev_code,
+    password: newPassword
+  });
+
+  assert.equal(reset.response.status, 200);
+  assert.ok(reset.data.token);
+
+  const oldSessionProfile = await fetch(`${baseUrl}/api/auth/profile`, {
+    headers: {
+      Authorization: `Bearer ${verify.data.token}`
+    }
+  });
+
+  assert.equal(oldSessionProfile.status, 401);
+
+  const oldLogin = await postJson("/api/auth/login", {
+    email,
+    password
+  });
+
+  assert.equal(oldLogin.response.status, 401);
+
+  const newLogin = await postJson("/api/auth/login", {
+    email,
+    password: newPassword
+  });
+
+  assert.equal(newLogin.response.status, 200);
+  assert.ok(newLogin.data.token);
+});
+
 test("auth flow, usage and analysis tasks work together", async () => {
   const email = `test-${Date.now()}@example.com`;
   const password = "test-password-123";
