@@ -88,17 +88,32 @@ test("revision fallback preserves the selected excerpt and edits reject stale of
 });
 
 test("model contract rejects malformed replies and removes ungrounded terms", async () => {
-  const local = evaluateResumeLocally({ resumeText: source });
+  const local = evaluateResumeLocally({
+    resumeText: source,
+    targetJobTitle: "Frontend Developer",
+    targetJobDescription: "React, TypeScript, Docker, Kubernetes"
+  });
   assert.deepEqual(evaluateResumeLocally({ resumeText: "Desenvolvedora React com Git e JavaScript" }).weak_words, []);
-  const raw = { ...local, detected_skills: ["React", "Kubernetes"], weak_words: ["apoio"], matched_keywords: ["Kubernetes"] };
+  const raw = {
+    ...local,
+    ats_score: 99,
+    job_match_score: 99,
+    detected_skills: ["React", "Kubernetes"],
+    weak_words: ["apoio"],
+    matched_keywords: ["Kubernetes"],
+    missing_keywords: ["Kubernetes", "Financial Modeling"]
+  };
   const options = { resumeText: source, detectedArea: "frontend", localAnalysis: local };
   const parsed = await analyzeWithAI(options, async () => ({ content: JSON.stringify(raw) }));
   assert.ok(parsed);
-  assert.throws(() => assertGroundedAnalysis(parsed, source), /sem evidência/);
+  assert.throws(() => assertGroundedAnalysis(parsed, source), /Ungrounded term/);
   const merged = mergeAnalysis(parsed, local, source);
   assert.equal(merged.detected_skills.includes("Kubernetes"), false);
   assert.deepEqual(merged.weak_words, []);
-  assert.deepEqual(merged.matched_keywords, []);
+  assert.deepEqual(merged.matched_keywords, local.matched_keywords);
+  assert.equal(merged.ats_score, local.ats_score);
+  assert.equal(merged.job_match_score, local.job_match_score);
+  assert.deepEqual(merged.missing_keywords, local.missing_keywords);
   assert.equal(await analyzeWithAI(options, async () => ({ content: '{"ats_score":900}' })), null);
   assert.deepEqual(buildResumeEvidence("Texto sem termos fracos", { weak_words: ["apoio"] }), []);
 });

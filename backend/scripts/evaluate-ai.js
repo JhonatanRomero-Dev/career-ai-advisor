@@ -17,6 +17,7 @@ for (const fixture of fixtures) {
     targetJobTitle: fixture.target_job_title,
     targetJobDescription: fixture.target_job_description
   });
+  assertGroundedAnalysis(analysis, fixture.resume_text);
   const expected = fixture.expect || {};
 
   if (expected.area_contains) assert.match(analysis.main_area, new RegExp(expected.area_contains, "i"), fixture.id);

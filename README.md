@@ -82,7 +82,7 @@ Default URLs:
 - `BACKEND_PUBLIC_URL` or `MERCADO_PAGO_NOTIFICATION_URL` should point to a public HTTPS backend URL for webhooks.
 - `ALLOW_DEMO_CHECKOUT=true` enables the local demo checkout fallback; keep it `false` when testing a real gateway.
 - `SQLITE_DB_PATH` can point the backend to a custom SQLite file, useful for automated tests. Local SQLite databases under `backend/data` are ignored by Git.
-- `DATABASE_URL=postgres://...` enables the migration runner to apply Postgres migrations with `cd backend && npm run migrate`. The app runtime still defaults to SQLite until the data adapter is switched.
+- `DATABASE_URL=postgres://...` is used by the migration runner to apply Postgres migrations with `cd backend && npm run migrate`; the app runtime still uses SQLite. Production requires `DATABASE_PROVIDER=sqlite` and `SQLITE_DB_PATH` pointed at a persistent mounted volume. The application runtime does not use Postgres yet.
 - Uploaded resume files are parsed and deleted after analysis. Structured results stay in SQLite; extracted source text follows the `RESUME_TEXT_STORAGE` and `RESUME_TEXT_RETENTION_DAYS` privacy settings.
 - First-party product analytics stores only allowlisted events/properties. User IDs are HMAC-pseudonymized; resume text, name and email are never analytics properties. Users can opt out in Profile and browser Do Not Track is respected.
 - AI regression fixtures cover multiple career profiles. Run `npm run eval:ai` before changing prompts, models or scoring rules.
@@ -144,6 +144,7 @@ npm run test:e2e
 - [`docs/TROUBLESHOOTING.md`](C:\Users\Pichau\OneDrive\Documentos\Career AI Advisor\docs\TROUBLESHOOTING.md)
 - [`docs/CONTRIBUTING.md`](C:\Users\Pichau\OneDrive\Documentos\Career AI Advisor\docs\CONTRIBUTING.md)
 - [`docs/OPERATIONS.md`](C:\Users\Pichau\OneDrive\Documentos\Career AI Advisor\docs\OPERATIONS.md)
+- [`docs/USER_TESTING_PLAN.md`](C:\Users\Pichau\OneDrive\Documentos\Career AI Advisor\docs\USER_TESTING_PLAN.md)
 
 Backend smoke upload:
 

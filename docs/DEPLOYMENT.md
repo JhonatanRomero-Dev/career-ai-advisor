@@ -12,6 +12,8 @@ Backend:
 
 - `FRONTEND_URL`
 - `CORS_ORIGIN`
+- `DATABASE_PROVIDER=sqlite`
+- `SQLITE_DB_PATH` set to an absolute path on a persistent mounted volume
 - `AUTH_CODE_SECRET`
 - `OAUTH_STATE_SECRET`
 - `SMTP_HOST`
@@ -47,12 +49,14 @@ If you want encrypted resume text:
 7. Keep `ALLOW_DEMO_CHECKOUT=false`.
 8. Avoid `RESUME_TEXT_STORAGE=plain`.
 9. Configure CORS with explicit origins only.
-10. Verify the backend health endpoints return `ready`.
+10. Point `SQLITE_DB_PATH` to a persistent volume and rehearse a backup restore.
+11. Verify the backend health endpoints return `ready` and report the expected SQLite path.
 
 ## Runtime Notes
 
-- The backend still runs on SQLite by default, even if `DATABASE_URL` points to Postgres.
-- If `DATABASE_URL` is set to Postgres, health checks will report the configured provider and the runtime provider separately.
+- The backend runtime uses SQLite. Production startup requires `DATABASE_PROVIDER=sqlite` and an absolute `SQLITE_DB_PATH` on storage that survives restarts and redeploys.
+- `DATABASE_URL` is used by the Postgres migration runner. Postgres is not yet supported by the application runtime; production startup rejects a Postgres runtime configuration.
+- A configured path alone does not make storage durable: mount a persistent volume at that path in the hosting platform.
 - Webhooks need a public HTTPS backend URL; localhost is fine for development only when tunneled through a public endpoint.
 - `public/maintenance.json` can be used to show a maintenance screen without redeploying the app shell.
 

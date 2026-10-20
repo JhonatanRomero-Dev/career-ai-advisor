@@ -495,7 +495,7 @@ test("feedback tasks submit, persist and meet accessibility checks", async ({ pa
   await page.goto("/feedback");
   await page.getByRole("radio", { name: "4 estrelas", exact: true }).check();
   await page.getByLabel("O que aconteceu ou poderia melhorar?").fill("Encontrei a vaga desejada, mas gostaria de mais opções de empresas.");
-  await page.getByLabel(/1\. Encontre uma vaga/).selectOption("difficult");
+  await page.getByLabel(/5\. Encontre uma vaga/).selectOption("difficult");
   await page.getByRole("button", { name: "Enviar feedback", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Feedback recebido");
   await page.reload();

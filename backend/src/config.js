@@ -1,3 +1,5 @@
+import path from "node:path";
+
 const HTTPS_URL_REGEX = /^https:\/\//i;
 const LOCAL_URL_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
 
@@ -51,6 +53,10 @@ function validateProductionConfig() {
     paymentGateway === "mp" ||
     hasAnyEnv(["MERCADO_PAGO_ACCESS_TOKEN", "MP_ACCESS_TOKEN"]);
   const aiProvider = (envValue("AI_PROVIDER") || "auto").toLowerCase();
+  const providerOverride = envValue("DATABASE_PROVIDER") || envValue("DB_PROVIDER");
+  const configuredDatabaseProvider = (providerOverride ||
+    (/^postgres(?:ql)?:\/\//i.test(envValue("DATABASE_URL")) ? "postgres" : "sqlite")).toLowerCase();
+  const sqlitePath = envValue("SQLITE_DB_PATH");
 
   pushMissing(errors, ["AUTH_CODE_SECRET"], "Configure segredo de codigos de autenticacao");
   pushMissing(errors, ["OAUTH_STATE_SECRET"], "Configure segredo de estado OAuth");
@@ -98,6 +104,16 @@ function validateProductionConfig() {
 
   if ((envValue("RESUME_TEXT_STORAGE") || "").toLowerCase() === "encrypted" && !hasAnyEnv(["RESUME_TEXT_ENCRYPTION_KEY", "AUTH_CODE_SECRET"])) {
     errors.push("RESUME_TEXT_STORAGE=encrypted requer RESUME_TEXT_ENCRYPTION_KEY ou AUTH_CODE_SECRET.");
+  }
+
+  if (!providerOverride || !["sqlite", "sqlite3"].includes(configuredDatabaseProvider)) {
+    errors.push("O runtime de producao ainda usa SQLite. Configure DATABASE_PROVIDER=sqlite e SQLITE_DB_PATH em um volume persistente.");
+  }
+
+  pushMissing(errors, ["SQLITE_DB_PATH"], "Configure SQLITE_DB_PATH para o volume persistente do banco");
+
+  if (sqlitePath && !path.isAbsolute(sqlitePath)) {
+    errors.push("SQLITE_DB_PATH deve ser um caminho absoluto dentro do volume persistente.");
   }
 
   if (usesMercadoPago) {

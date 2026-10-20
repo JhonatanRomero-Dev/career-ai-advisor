@@ -6,6 +6,12 @@ const api = "http://127.0.0.1:3100";
 const expect = baseExpect.configure({ timeout: 20000 });
 test.use({ trace: "retain-on-failure" });
 
+async function getMutationHeaders(page, headers) {
+  const response = await page.request.get(`${api}/api/auth/csrf`, { headers });
+  const { csrf_token: csrfToken } = await response.json();
+  return { ...headers, "x-csrf-token": csrfToken };
+}
+
 test("resume journey saves reviewed versions, exports PDF and tracks an adapted application", async ({ page }, testInfo) => {
   test.setTimeout(180000);
   const errors = [];
@@ -25,11 +31,9 @@ test("resume journey saves reviewed versions, exports PDF and tracks an adapted 
     localStorage.setItem("career-ai-auth-expires-at", expires_at);
     localStorage.setItem("logged", "true");
   }, session);
-  const csrf = await (await page.request.get(`${api}/api/auth/csrf`)).json();
-  const mutationHeaders = { ...headers, "x-csrf-token": csrf.csrf_token };
   const source = "Ana Lima\n\nResumo profissional\nDesenvolvedora frontend com React, JavaScript, TypeScript, HTML, CSS e Git.\n\nExperiência profissional\nResponsável por testes de interfaces. Reduzi erros em 20%.";
   const docx = createResumeDocx(source);
-  const uploaded = await page.request.post(`${api}/api/analysis`, { headers: mutationHeaders, multipart: { privacyConsent: "true", resume: { name: "ana.docx", mimeType: docx.type, buffer: Buffer.from(await docx.arrayBuffer()) } } });
+  const uploaded = await page.request.post(`${api}/api/analysis`, { headers: await getMutationHeaders(page, headers), multipart: { privacyConsent: "true", resume: { name: "ana.docx", mimeType: docx.type, buffer: Buffer.from(await docx.arrayBuffer()) } } });
   expect(uploaded.status(), await uploaded.text()).toBe(200);
   const { analysis } = await uploaded.json();
   await page.goto(`/analysis?id=${analysis.id}`);
@@ -63,7 +67,7 @@ test("resume journey saves reviewed versions, exports PDF and tracks an adapted 
   await expect(page.getByLabel("Currículo", { exact: true })).toHaveValue(revised);
 
   const job = { id: `job-${analysis.id}`, external_id: `job-${analysis.id}`, title: "Desenvolvedora React", company: "Empresa de teste", description: "React, testes automatizados e Git.", is_real: true, url: "https://example.com/jobs/react", source: "Fixture", match_evaluated: false };
-  const saved = await page.request.post(`${api}/api/jobs/tracked`, { headers: mutationHeaders, data: { job, analysis_id: analysis.id } });
+  const saved = await page.request.post(`${api}/api/jobs/tracked`, { headers: await getMutationHeaders(page, headers), data: { job, analysis_id: analysis.id } });
   expect(saved.status()).toBe(201);
   await page.goto("/jobs");
   await page.getByRole("tab", { name: /Minha jornada/ }).click();

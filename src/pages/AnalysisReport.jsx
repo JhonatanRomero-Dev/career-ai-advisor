@@ -620,7 +620,11 @@ export default function AnalysisReport() {
 
       <section className="space-y-2 border-y py-4 text-sm">
         <h2 className="font-semibold">Critérios da avaliação</h2>
-        <p>{currentAnalysis.analysis_method === "local" ? "Análise por regras locais. A nota ATS usa cobertura de palavras-chave da área; clareza combina tamanho do texto e termos ausentes; compatibilidade considera habilidades detectadas e, quando fornecida, a vaga alvo." : currentAnalysis.analysis_method === "ai" ? "Análise com IA. As notas são estimativas do modelo a partir do texto, das habilidades e da vaga alvo. Podem variar entre análises." : "O método desta análise antiga não foi registrado."}</p>
+        <p>{currentAnalysis.analysis_method === "local"
+          ? "Análise por regras locais. A nota ATS usa cobertura de palavras-chave da área; o match da vaga usa termos identificados na descrição e no currículo. Clareza e compatibilidade são estimativas baseadas no texto."
+          : currentAnalysis.analysis_method === "ai"
+            ? "Análise com IA. As notas ATS e de match usam cobertura local de palavras-chave; clareza e compatibilidade de mercado são estimativas do modelo e podem variar entre análises."
+            : "O método desta análise antiga não foi registrado. As notas são estimativas e podem não usar os mesmos critérios das análises atuais."}</p>
         <p className="text-muted-foreground">As notas não são uma validação de um ATS específico nem uma previsão de contratação. Termos ausentes só devem ser incluídos quando fizerem parte da sua experiência.</p>
       </section>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
@@ -707,6 +711,9 @@ export default function AnalysisReport() {
               <h2 className="font-semibold text-foreground">Prioridades de melhoria</h2>
               <p className="text-sm text-muted-foreground">
                 Comece pelo que tende a gerar mais impacto na próxima versão.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Confira cada sugestão e mantenha no currículo somente fatos, habilidades e resultados que você possa comprovar.
               </p>
             </div>
           </div>

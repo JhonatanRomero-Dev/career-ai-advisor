@@ -810,6 +810,12 @@ ${resumeText.slice(0, MAX_RESUME_TEXT_CHARS)}
 
 export function mergeAnalysis(aiAnalysis, localAnalysis, resumeText = "") {
   const source = aiAnalysis || {};
+  const localMatchedKeywords = uniqueStrings(localAnalysis.matched_keywords || []).filter((word) =>
+    includesSearchTerm(resumeText, word)
+  );
+  const localMissingKeywords = uniqueStrings(localAnalysis.missing_keywords || []).filter((word) =>
+    !includesSearchTerm(resumeText, word)
+  );
   const verifiedAiSkills = uniqueStrings(source.detected_skills || []).filter((skill) =>
     skill.length >= 2 && includesSearchTerm(resumeText, skill)
   );
@@ -819,13 +825,13 @@ export function mergeAnalysis(aiAnalysis, localAnalysis, resumeText = "") {
     main_area: source.main_area || localAnalysis.main_area,
     seniority: source.seniority || localAnalysis.seniority,
     english_level: source.english_level || localAnalysis.english_level,
-    ats_score: clampScore(source.ats_score ?? localAnalysis.ats_score),
+    ats_score: clampScore(localAnalysis.ats_score ?? source.ats_score),
     clarity_score: clampScore(source.clarity_score ?? localAnalysis.clarity_score),
     market_compatibility: clampScore(source.market_compatibility ?? localAnalysis.market_compatibility),
-    job_match_score: clampScore(source.job_match_score ?? localAnalysis.job_match_score),
-    matched_keywords: uniqueStrings(source.matched_keywords?.length ? source.matched_keywords : localAnalysis.matched_keywords).filter((word) => includesSearchTerm(resumeText, word)),
+    job_match_score: clampScore(localAnalysis.job_match_score ?? source.job_match_score),
+    matched_keywords: localMatchedKeywords,
     detected_skills: uniqueStrings([...localAnalysis.detected_skills, ...verifiedAiSkills]),
-    missing_keywords: uniqueStrings(source.missing_keywords?.length ? source.missing_keywords : localAnalysis.missing_keywords),
+    missing_keywords: localMissingKeywords,
     weak_words: uniqueStrings(source.weak_words?.length ? source.weak_words : localAnalysis.weak_words).filter((word) => includesSearchTerm(resumeText, word)),
     strengths: uniqueStrings(source.strengths?.length ? source.strengths : localAnalysis.strengths),
     suggestions: uniqueStrings(source.suggestions?.length ? source.suggestions : localAnalysis.suggestions),

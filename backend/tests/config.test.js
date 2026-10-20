@@ -1,5 +1,6 @@
 import assert from "assert/strict";
 import test from "node:test";
+import path from "node:path";
 
 import { validateRuntimeConfig } from "../src/config.js";
 
@@ -33,8 +34,12 @@ const CONFIG_ENV_KEYS = [
   "AI_PROVIDER",
   "OPENAI_API_KEY",
   "GROQ_API_KEY",
-  "DATABASE_URL"
+  "DATABASE_URL",
+  "DATABASE_PROVIDER",
+  "DB_PROVIDER",
+  "SQLITE_DB_PATH"
 ];
+const persistentSqlitePath = path.resolve(path.parse(process.cwd()).root, "var", "lib", "career-ai", "career-ai.sqlite");
 
 function withConfigEnv(values, callback) {
   const previous = Object.fromEntries(
@@ -125,12 +130,39 @@ test("production config accepts explicit secure settings", () => {
     BACKEND_PUBLIC_URL: "https://api.example.com",
     AI_PROVIDER: "openai",
     OPENAI_API_KEY: "sk-test",
-    DATABASE_URL: "postgres://user:pass@example.com:5432/career_ai"
+    DATABASE_URL: "postgres://user:pass@example.com:5432/career_ai",
+    DATABASE_PROVIDER: "sqlite",
+    SQLITE_DB_PATH: persistentSqlitePath
   }, () => {
     assert.deepEqual(validateRuntimeConfig({ logger: silentLogger }), {
       errors: [],
       warnings: []
     });
+  });
+});
+
+test("production config requires an explicit persistent SQLite path and supported runtime", () => {
+  withConfigEnv({
+    NODE_ENV: "production",
+    AUTH_CODE_SECRET: "auth-secret-at-least-long-enough",
+    OAUTH_STATE_SECRET: "oauth-secret-at-least-long-enough",
+    FRONTEND_URL: "https://app.example.com",
+    CORS_ORIGIN: "https://app.example.com",
+    SMTP_HOST: "smtp.example.com",
+    SMTP_PORT: "465",
+    SMTP_USER: "mailer@example.com",
+    SMTP_PASS: "smtp-password",
+    SMTP_FROM: "Career AI <mailer@example.com>",
+    AUTH_COOKIE_SECURE: "true",
+    DATABASE_PROVIDER: "sqlite",
+    DATABASE_URL: "postgres://user:pass@example.com:5432/career_ai"
+  }, () => {
+    assert.throws(() => validateRuntimeConfig({ logger: silentLogger }), /SQLITE_DB_PATH/);
+    process.env.SQLITE_DB_PATH = "backend/data/career-ai.sqlite";
+    assert.throws(() => validateRuntimeConfig({ logger: silentLogger }), /caminho absoluto/);
+    process.env.SQLITE_DB_PATH = persistentSqlitePath;
+    process.env.DATABASE_PROVIDER = "postgres";
+    assert.throws(() => validateRuntimeConfig({ logger: silentLogger }), /runtime de producao ainda usa SQLite/);
   });
 });
 
@@ -153,7 +185,9 @@ test("production config accepts Mercado Pago alias environment variables", () =>
     BACKEND_PUBLIC_URL: "https://api.example.com",
     AI_PROVIDER: "groq",
     GROQ_API_KEY: "gsk-test",
-    DATABASE_URL: "postgres://user:pass@example.com:5432/career_ai"
+    DATABASE_URL: "postgres://user:pass@example.com:5432/career_ai",
+    DATABASE_PROVIDER: "sqlite",
+    SQLITE_DB_PATH: persistentSqlitePath
   }, () => {
     assert.deepEqual(validateRuntimeConfig({ logger: silentLogger }), {
       errors: [],
