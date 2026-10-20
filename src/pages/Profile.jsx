@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   AlertCircle,
   Briefcase,
   CheckCircle2,
+  Download,
   ExternalLink,
+  FileX,
   Link as LinkIcon,
   Mail,
   MapPin,
@@ -14,11 +15,11 @@ import {
   Save,
   ShieldCheck,
   Target,
-  Upload,
+  Trash2,
   User,
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,12 +34,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import ProfessionalProfile from "@/components/profile/ProfessionalProfile";
+import ProfilePhotoPicker from "@/components/profile/ProfilePhotoPicker";
+import ProfileImportDialog from "@/components/profile/ProfileImportDialog";
+import useProfileDraft from "@/components/profile/useProfileDraft";
+import { fallbackLocationOptions, fetchBrazilianCityOptions, getLocationSuggestions } from "@/lib/locationSuggestions";
 
 const PROFILE_KEY = "career-ai-user-profile";
-const BRAZILIAN_CITIES_API_URL =
-  "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome";
 
 const defaultProfile = {
+  photo: "",
   name: "",
   email: "",
   phone: "",
@@ -49,16 +55,20 @@ const defaultProfile = {
   linkedin: "",
   portfolio: "",
   summary: "",
+  github: "", skills: [], experiences: [], projects: [], certificates: [], achievements: [], publicEnabled: false,
 };
 
 const profileFields = [
-  ["name", "nome"],
-  ["phone", "telefone"],
-  ["location", "localização"],
-  ["headline", "título profissional"],
-  ["targetRole", "cargo desejado"],
-  ["experienceLevel", "nível de experiência"],
-  ["summary", "resumo profissional"],
+  ["name", "Nome"],
+  ["phone", "Telefone"],
+  ["location", "Localização"],
+  ["headline", "Título profissional"],
+  ["targetRole", "Cargo desejado"],
+  ["experienceLevel", "Nível de experiência"],
+  ["summary", "Resumo profissional"],
+  ["skills", "Habilidades"],
+  ["experiences", "Experiências"],
+  ["projects", "Projetos"],
 ];
 
 const experienceOptions = [
@@ -76,22 +86,6 @@ const experienceLabels = Object.fromEntries(
   experienceOptions.map((option) => [option.value, option.label])
 );
 
-const fallbackLocationOptions = [
-  ["Piraquara", "PR"],
-  ["Pirai do Sul", "PR"],
-  ["Piracicaba", "SP"],
-  ["Piraju", "SP"],
-  ["Pirapora", "MG"],
-  ["Piracaia", "SP"],
-  ["Piracanjuba", "GO"],
-  ["Piranhas", "AL"],
-  ["Curitiba", "PR"],
-  ["Sao Paulo", "SP"],
-  ["Rio de Janeiro", "RJ"],
-  ["Belo Horizonte", "MG"],
-  ["Florianopolis", "SC"],
-].map(([city, state]) => createLocationOption(city, state));
-
 const trimProfile = (profileData) => ({
   ...profileData,
   name: String(profileData.name || "").trim(),
@@ -102,6 +96,7 @@ const trimProfile = (profileData) => ({
   experienceLevel: String(profileData.experienceLevel || "").trim(),
   linkedin: normalizeUrl(profileData.linkedin),
   portfolio: normalizeUrl(profileData.portfolio),
+  github: normalizeUrl(profileData.github),
   summary: String(profileData.summary || "").trim(),
 });
 
@@ -133,97 +128,17 @@ function isValidUrl(value = "") {
   }
 }
 
-function normalizeLocationSearch(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function createLocationOption(city = "", state = "") {
-  const cleanCity = String(city || "").trim();
-  const cleanState = String(state || "").trim().toUpperCase();
-
-  if (!cleanCity) {
-    return null;
-  }
-
-  const label = cleanState ? `${cleanCity}, ${cleanState}` : cleanCity;
-
-  return {
-    city: cleanCity,
-    citySearch: normalizeLocationSearch(cleanCity),
-    label,
-    search: normalizeLocationSearch(`${cleanCity} ${cleanState} ${label}`),
-    state: cleanState,
-  };
-}
-
-async function fetchBrazilianCityOptions() {
-  const response = await fetch(BRAZILIAN_CITIES_API_URL);
-
-  if (!response.ok) {
-    throw new Error("Não foi possível carregar cidades.");
-  }
-
-  const cityData = await response.json();
-  const uniqueOptions = new Map();
-
-  cityData.forEach((city) => {
-    const state =
-      city?.microrregiao?.mesorregiao?.UF?.sigla ||
-      city?.["regiao-imediata"]?.["regiao-intermediaria"]?.UF?.sigla ||
-      "";
-    const option = createLocationOption(city?.nome, state);
-
-    if (option && !uniqueOptions.has(option.label)) {
-      uniqueOptions.set(option.label, option);
-    }
-  });
-
-  return Array.from(uniqueOptions.values());
-}
-
-function getLocationSuggestions(options = [], query = "") {
-  const normalizedQuery = normalizeLocationSearch(query);
-
-  if (normalizedQuery.length < 2) {
-    return [];
-  }
-
-  return options
-    .map((option) => {
-      if (option.citySearch.startsWith(normalizedQuery)) {
-        return { option, score: 0 };
-      }
-
-      if (option.search.includes(normalizedQuery)) {
-        return { option, score: 1 };
-      }
-
-      return null;
-    })
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        a.score - b.score ||
-        a.option.label.localeCompare(b.option.label, "pt-BR")
-    )
-    .slice(0, 8)
-    .map(({ option }) => option);
-}
-
 function getProfileProgress(profileData = {}) {
-  const completed = profileFields.filter(([field]) => String(profileData[field] || "").trim()).length;
+  const isFilled = ([field]) => Array.isArray(profileData[field])
+    ? profileData[field].some((item) => String(typeof item === "string" ? item : item?.title || "").trim())
+    : Boolean(String(profileData[field] || "").trim());
+  const completed = profileFields.filter(isFilled).length;
 
   return {
     completed,
     total: profileFields.length,
     value: Math.round((completed / profileFields.length) * 100),
-    missing: profileFields
-      .filter(([field]) => !String(profileData[field] || "").trim())
-      .map(([, label]) => label),
+    missing: profileFields.filter((field) => !isFilled(field)),
   };
 }
 
@@ -400,10 +315,24 @@ function LocationAutocomplete({ hasError, isLoading, onChange, options, value })
 
 export default function Profile() {
   const queryClient = useQueryClient();
-  const [profile, setProfile] = useState(defaultProfile);
+  const navigate = useNavigate();
+  const [focusRequest, setFocusRequest] = useState(null);
   const [savedMessage, setSavedMessage] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false);
+  const [privacyMessage, setPrivacyMessage] = useState("");
+  const [privacyError, setPrivacyError] = useState("");
+  const [privacyAction, setPrivacyAction] = useState("");
+  const [privateAnalyticsEnabled, setPrivateAnalyticsEnabled] = useState(
+    () => localStorage.getItem("career-ai-analytics-disabled") !== "true"
+  );
+
+  function updatePrivateAnalytics(enabled) {
+    setPrivateAnalyticsEnabled(enabled);
+    localStorage.setItem("career-ai-analytics-disabled", enabled ? "false" : "true");
+  }
 
   const { data: user } = useQuery({
     queryKey: ["current-user"],
@@ -421,6 +350,7 @@ export default function Profile() {
     queryKey: ["user-profile", user?.email],
     queryFn: () => base44.auth.getProfile(),
     enabled: Boolean(user?.email),
+    refetchOnWindowFocus: false,
   });
   const {
     data: cityOptions,
@@ -434,18 +364,39 @@ export default function Profile() {
   });
   const locationOptions = cityOptions?.length ? cityOptions : fallbackLocationOptions;
 
-  useEffect(() => {
+  const initialProfile = useMemo(() => {
     const localProfile = getLocalProfile(profileStorageKey, user?.email);
     const remoteProfile = savedProfile?.updated_date ? savedProfile : {};
 
-    setProfile({
+    return {
       ...defaultProfile,
       ...localProfile,
       ...remoteProfile,
       name: savedProfile?.name || localProfile.name || user?.name || "",
       email: user?.email || savedProfile?.email || localProfile.email || "",
-    });
+    };
   }, [profileStorageKey, savedProfile, user]);
+
+  const { profile, setProfile, isReady, hasChanges, pendingDraft, restoreDraft, discardChanges, markSaved, draftError } = useProfileDraft({
+    initialProfile, storageKey: profileStorageKey, ready: Boolean(user?.email) && !isLoadingProfile,
+  });
+
+  const focusMissingField = (field) => {
+    if (["skills", "experiences", "projects"].includes(field)) {
+      setFocusRequest({ field, id: Date.now() });
+      return;
+    }
+    const input = document.getElementById(field);
+    input?.scrollIntoView({ block: "center" });
+    input?.focus({ preventScroll: true });
+  };
+
+  const discardEdits = () => {
+    discardChanges();
+    setSavedMessage("");
+    setSaveError("");
+    setFieldErrors([]);
+  };
 
   const profileProgress = getProfileProgress(profile);
   const profileLinks = [
@@ -462,12 +413,15 @@ export default function Profile() {
     setProfile((current) => ({ ...current, [field]: value }));
     setSavedMessage("");
     setSaveError("");
+    setFieldErrors([]);
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!isReady || pendingDraft || !hasChanges || isPreparingPhoto || isSavingProfile) return;
     setIsSavingProfile(true);
     setSaveError("");
+    setFieldErrors([]);
     setSavedMessage("");
 
     const cleanProfile = trimProfile({
@@ -490,44 +444,103 @@ export default function Profile() {
         email: user?.email || updatedProfile.email || cleanProfile.email,
       };
 
-      setProfile(normalizedProfile);
-      localStorage.setItem(profileStorageKey, JSON.stringify(normalizedProfile));
+      markSaved(normalizedProfile, profile);
+      try {
+        localStorage.setItem(profileStorageKey, JSON.stringify(normalizedProfile));
+      } catch {
+        // The account was saved successfully even if the browser cache is full.
+      }
       queryClient.setQueryData(["user-profile", user?.email], normalizedProfile);
       queryClient.invalidateQueries({ queryKey: ["current-user"] });
       setSavedMessage("Perfil salvo com sucesso.");
-    } catch {
-      const localProfile = {
-        ...cleanProfile,
-        email: user?.email || cleanProfile.email,
-      };
-
-      localStorage.setItem(profileStorageKey, JSON.stringify(localProfile));
-      setProfile(localProfile);
-      setSaveError("Não foi possível sincronizar agora. Salvei uma cópia neste navegador.");
-      setSavedMessage("Não foi possível sincronizar agora. Salvei uma cópia neste navegador.");
+    } catch (error) {
+      setSaveError(error?.message || "Não foi possível salvar o perfil agora.");
+      setFieldErrors(error?.fieldErrors || []);
     } finally {
       setIsSavingProfile(false);
     }
   };
 
+  const runPrivacyAction = async (action, callback) => {
+    setPrivacyAction(action);
+    setPrivacyMessage("");
+    setPrivacyError("");
+
+    try {
+      await callback();
+    } catch (error) {
+      setPrivacyError(error.message || "Nao foi possivel concluir a acao.");
+    } finally {
+      setPrivacyAction("");
+    }
+  };
+
+  const handleExportData = () => runPrivacyAction("export", async () => {
+    const data = await base44.privacy.exportData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `career-ai-export-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setPrivacyMessage("Exportacao gerada.");
+  });
+
+  const handleClearResumeTexts = () => runPrivacyAction("texts", async () => {
+    const result = await base44.privacy.clearResumeTexts();
+
+    setPrivacyMessage(`${result.cleared_resume_texts || 0} texto(s) extraido(s) apagado(s).`);
+  });
+
+  const handleDeleteAnalyses = () => {
+    if (!window.confirm("Apagar todas as analises e jobs da sua conta? Esta acao nao pode ser desfeita.")) {
+      return;
+    }
+
+    runPrivacyAction("analyses", async () => {
+      const result = await base44.privacy.deleteAnalyses();
+
+      queryClient.invalidateQueries({ queryKey: ["analysis-usage"] });
+      setPrivacyMessage(`${result.deleted_analyses || 0} analise(s) apagada(s).`);
+    });
+  };
+
+  const handleDeleteAccount = () => {
+    const confirmation = window.prompt("Digite EXCLUIR para apagar sua conta e dados pessoais.");
+
+    if (confirmation === null) {
+      return;
+    }
+
+    runPrivacyAction("account", async () => {
+      await base44.privacy.deleteAccount({ confirm: confirmation });
+      localStorage.clear();
+      navigate("/", { replace: true });
+    });
+  };
+
   return (
-    <div className="max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Perfil</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Dados usados para personalizar análises, vagas e próximos passos.
-          </p>
+    <div className="mx-auto max-w-5xl space-y-6">
+      {pendingDraft && <Card className="space-y-3 border-primary/30 p-4" role="region" aria-label="Rascunho disponível">
+        <div><h2 className="font-semibold">Continuar de onde parou?</h2><p className="mt-1 text-sm text-muted-foreground">Há alterações não salvas neste navegador. Recupere o rascunho ou descarte-o para usar o perfil salvo.</p></div>
+        <div className="flex flex-wrap gap-2"><Button type="button" onClick={restoreDraft}>Recuperar rascunho</Button><Button type="button" variant="outline" onClick={discardEdits}>Descartar rascunho</Button></div>
+      </Card>}
+      {(hasChanges || isSavingProfile || savedMessage || saveError) && <div role="region" aria-label="Salvar alterações do perfil" className="sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3 shadow-md sm:p-4">
+        <div className="min-w-0 flex-1" role="status" aria-live="polite">
+          <p className="text-sm font-medium">{isSavingProfile ? "Salvando seu perfil..." : hasChanges ? "Alterações não salvas" : savedMessage}</p>
+          {hasChanges && !draftError && <p className="mt-1 text-xs text-muted-foreground">Rascunho guardado neste navegador.</p>}
+          {saveError && <p role="alert" className="mt-1 text-sm text-destructive">{saveError}</p>}
         </div>
-
-        <Button asChild size="sm" variant="outline">
-          <Link to="/upload">
-            <Upload className="h-4 w-4" />
-            Enviar currículo
-          </Link>
-        </Button>
-      </div>
-
+        {hasChanges && <div className="flex w-full gap-2 sm:w-auto">
+          <Button type="button" variant="outline" className="flex-1 sm:flex-none" disabled={isSavingProfile || isPreparingPhoto} onClick={discardEdits}>Descartar</Button>
+          <Button type="submit" form="profile-form" className="flex-1 sm:flex-none" disabled={!isReady || isSavingProfile || isPreparingPhoto}><Save className="h-4 w-4" />{isSavingProfile ? "Salvando..." : "Salvar perfil"}</Button>
+        </div>}
+      </div>}
+      {draftError && <p role="alert" className="text-sm text-destructive">{draftError}</p>}
       {isProfileError && (
         <Card className="border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
           <div className="flex gap-2">
@@ -539,16 +552,17 @@ export default function Profile() {
         </Card>
       )}
 
-      <motion.form
+      <form
+        id="profile-form"
         onSubmit={handleSubmit}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
+        className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
       >
-        <Card className="border-border/50 p-6">
+        <fieldset disabled={!isReady || Boolean(pendingDraft) || isSavingProfile} className="contents">
+        <Card className="min-w-0 border-border/50 p-4 sm:p-6">
           <div className="mb-7 flex flex-col gap-4 border-b border-border/60 pb-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
               <Avatar className="h-16 w-16 border border-border">
+                <AvatarImage src={profile.photo || undefined} alt="Foto de perfil" className="object-cover" />
                 <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
                   {getInitials(profile)}
                 </AvatarFallback>
@@ -571,6 +585,14 @@ export default function Profile() {
               {profileProgress.value}% completo
             </Badge>
           </div>
+
+          <ProfilePhotoPicker photo={profile.photo} onChange={(photo) => handleChange("photo", photo)}
+            onProcessingChange={setIsPreparingPhoto} disabled={isSavingProfile || isLoadingProfile} />
+
+          <div className="mb-6"><ProfileImportDialog profile={profile} accountKey={user?.email} disabled={!isReady || Boolean(pendingDraft) || isSavingProfile || isPreparingPhoto} onApply={(values) => {
+            setProfile((current) => ({ ...current, ...values }));
+            setSavedMessage(""); setSaveError(""); setFieldErrors([]);
+          }} /></div>
 
           <section className="space-y-4">
             <div className="flex items-center gap-3">
@@ -729,13 +751,14 @@ export default function Profile() {
               </div>
             </div>
           </section>
+          <ProfessionalProfile profile={profile} onChange={handleChange} fieldErrors={fieldErrors} focusRequest={focusRequest} />
         </Card>
 
         <div className="space-y-6">
           <Card className="border-border/50 p-5">
             <div className="mb-4 flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold text-foreground">Qualidade do perfil</h3>
+              <h3 className="font-semibold text-foreground">Preenchimento do perfil</h3>
             </div>
 
             <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
@@ -746,8 +769,8 @@ export default function Profile() {
 
             {profileProgress.missing.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
-                {profileProgress.missing.slice(0, 6).map((item) => (
-                  <Badge key={item} variant="secondary">{item}</Badge>
+                {profileProgress.missing.map(([field, label]) => (
+                  <Button key={field} type="button" variant="outline" size="sm" onClick={() => focusMissingField(field)} aria-label={`Preencher ${label.toLowerCase()}`}>{label}</Button>
                 ))}
               </div>
             )}
@@ -756,7 +779,7 @@ export default function Profile() {
           <Card className="border-border/50 p-5">
             <div className="mb-4 flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold text-foreground">Preview</h3>
+              <h3 className="font-semibold text-foreground">Prévia do perfil</h3>
             </div>
 
             <p className="text-base font-semibold text-foreground">
@@ -799,22 +822,75 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="mt-5 border-t border-border/60 pt-4">
-              <div className="min-h-5">
-                {saveError ? (
-                  <p className="text-sm text-destructive">{saveError}</p>
-                ) : (
-                  <p className="text-sm text-emerald-600">{savedMessage}</p>
-                )}
+          </Card>
+
+          <Card className="border-border/50 p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-foreground">Dados e privacidade</h3>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Analytics privado</p>
+                  <p className="text-xs text-muted-foreground">Mede uso sem enviar currículo, nome ou e-mail.</p>
+                </div>
+                <Switch checked={privateAnalyticsEnabled} onCheckedChange={updatePrivateAnalytics} aria-label="Permitir analytics privado" />
               </div>
-              <Button type="submit" className="mt-3 w-full" disabled={isSavingProfile || isLoadingProfile}>
-                <Save className="h-4 w-4" />
-                {isSavingProfile ? "Salvando..." : "Salvar perfil"}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                disabled={Boolean(privacyAction)}
+                onClick={handleExportData}
+              >
+                <Download className="h-4 w-4" />
+                Exportar meus dados
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                disabled={Boolean(privacyAction)}
+                onClick={handleClearResumeTexts}
+              >
+                <FileX className="h-4 w-4" />
+                Apagar textos extraidos
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                disabled={Boolean(privacyAction)}
+                onClick={handleDeleteAnalyses}
+              >
+                <Trash2 className="h-4 w-4" />
+                Apagar analises
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="w-full justify-start"
+                disabled={Boolean(privacyAction)}
+                onClick={handleDeleteAccount}
+              >
+                <Trash2 className="h-4 w-4" />
+                Excluir conta
+              </Button>
+            </div>
+
+            <div className="mt-4 min-h-5 text-sm">
+              {privacyError ? (
+                <p className="text-destructive">{privacyError}</p>
+              ) : (
+                <p className="text-emerald-600">{privacyMessage}</p>
+              )}
             </div>
           </Card>
         </div>
-      </motion.form>
+        </fieldset>
+      </form>
     </div>
   );
 }

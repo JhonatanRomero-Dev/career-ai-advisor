@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,11 @@ import ScoreGauge from "@/components/dashboard/ScoreGauge";
 import StatCard from "@/components/dashboard/StatCard";
 import JobCard from "@/components/dashboard/JobCard";
 import ImprovementTasks from "@/components/dashboard/ImprovementTasks";
-import ATSProgressChart from "@/components/dashboard/ATSProgressChart";
+import useAnalysisTasks from "@/components/analysis/useAnalysisTasks";
+import { readLastAnalysisId, rememberLastAnalysisId } from "@/lib/analysisCache";
+import { uniqueJobs } from "@/lib/jobSearch";
+
+const ATSProgressChart = lazy(() => import("@/components/dashboard/ATSProgressChart"));
 
 const scoreGuide = [
   {
@@ -57,7 +61,7 @@ function isProfileComplete(profile = {}) {
   );
 }
 
-function buildGrowthSteps({ latest, analysisCount, profile }) {
+function buildGrowthSteps({ latest, analysisCount, profile, checked }) {
   const hasAnalysis = Boolean(latest?.id);
   const hasSuggestions = Array.isArray(latest?.suggestions) && latest.suggestions.length > 0;
   const hasComparison = Number(analysisCount || 0) > 1;
@@ -82,7 +86,7 @@ function buildGrowthSteps({ latest, analysisCount, profile }) {
     {
       title: "Aplicar melhorias",
       text: "Use as sugestões do relatório como checklist antes de reenviar.",
-      done: hasSuggestions,
+      done: hasSuggestions && latest.suggestions.every((_, index) => checked[index] === true),
       path: latest?.id ? `/analysis?id=${latest.id}` : "/upload",
       action: "Ver relatório",
       icon: ListChecks
@@ -105,6 +109,7 @@ export default function Dashboard() {
   const [analysisCount, setAnalysisCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const { checked } = useAnalysisTasks(latest?.id);
 
   useEffect(() => {
 
@@ -119,29 +124,25 @@ export default function Dashboard() {
           setLatest(analyses[0]);
           setAllAnalyses(analyses);
           setAnalysisCount(analyses.length);
-          localStorage.setItem("analysisResult", JSON.stringify({ analysis: analyses[0] }));
+          rememberLastAnalysisId(analyses[0].id);
           return;
         }
 
-        const saved = localStorage.getItem("analysisResult");
+        const savedAnalysisId = readLastAnalysisId();
 
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setLatest(parsed.analysis);
-          setAllAnalyses([parsed.analysis]);
+        if (savedAnalysisId) {
+          const [savedAnalysis] = await base44.entities.ResumeAnalysis.filter({ id: savedAnalysisId });
+          if (!savedAnalysis) return;
+          setLatest(savedAnalysis);
+          setAllAnalyses([savedAnalysis]);
           setAnalysisCount(1);
         }
       } catch (error) {
         console.error("Erro ao carregar análises:", error);
 
-        const saved = localStorage.getItem("analysisResult");
-
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setLatest(parsed.analysis);
-          setAllAnalyses([parsed.analysis]);
-          setAnalysisCount(1);
-        }
+        setLatest(null);
+        setAllAnalyses([]);
+        setAnalysisCount(0);
       } finally {
         setIsLoading(false);
       }
@@ -204,13 +205,16 @@ export default function Dashboard() {
     );
   }
 
-  const growthSteps = buildGrowthSteps({ latest, analysisCount, profile });
+  const growthSteps = buildGrowthSteps({ latest, analysisCount, profile, checked });
   const completedSteps = growthSteps.filter((step) => step.done).length;
   const progressValue = Math.round((completedSteps / growthSteps.length) * 100);
   const nextStep = growthSteps.find((step) => !step.done);
+  const shouldShowProgressChart = allAnalyses
+    .filter((analysis) => analysis.status === "completed" && analysis.ats_score != null)
+    .length >= 2;
 
   return (
-    <div className="space-y-8 max-w-6xl">
+    <div className="mx-auto max-w-6xl space-y-8">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -302,7 +306,7 @@ export default function Dashboard() {
 
         <div className="grid gap-3 lg:grid-cols-4">
           {growthSteps.map((step) => (
-            <div key={step.title} className="rounded-lg border border-border/60 bg-background p-4">
+            <div key={step.title} role="group" aria-label={`${step.title}: ${step.done ? "concluída" : "pendente"}`} className="rounded-lg border border-border/60 bg-background p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <step.icon className="h-4 w-4" />
@@ -366,7 +370,11 @@ export default function Dashboard() {
       </div>
 
       {/* Chart */}
-      <ATSProgressChart analyses={allAnalyses} />
+      {shouldShowProgressChart && (
+        <Suspense fallback={<Card className="h-[316px] border-border/50 p-6" />}>
+          <ATSProgressChart analyses={allAnalyses} />
+        </Suspense>
+      )}
 
       <Card className="border-border/50 p-5">
         <div className="mb-4 flex items-center gap-2">
@@ -526,9 +534,9 @@ export default function Dashboard() {
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-              {latest.recommended_jobs.map((job, i) => (
+              {uniqueJobs(latest.recommended_jobs).map((job, i) => (
                 <JobCard
-                  key={i}
+                  key={job.external_id || job.id || job.url}
                   job={job}
                   index={i}
                 />

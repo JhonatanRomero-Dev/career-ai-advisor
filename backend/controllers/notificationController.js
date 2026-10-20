@@ -1,3 +1,4 @@
+import { logger } from "../src/logger.js";
 import {
   countUnreadJobNotifications,
   listJobNotifications,
@@ -20,7 +21,7 @@ export function listNotifications(req, res) {
       unread_count: countUnreadJobNotifications(accountEmail)
     });
   } catch (error) {
-    console.log(error);
+    logger.controllerError("Controller action failed", { error, controller: "notificationController", action: "listNotifications" });
 
     return res.status(500).json({
       success: false,
@@ -38,7 +39,7 @@ export function getUnreadNotificationCount(req, res) {
       unread_count: countUnreadJobNotifications(accountEmail)
     });
   } catch (error) {
-    console.log(error);
+    logger.controllerError("Controller action failed", { error, controller: "notificationController", action: "getUnreadNotificationCount" });
 
     return res.status(500).json({
       success: false,
@@ -65,7 +66,7 @@ export function readNotification(req, res) {
       unread_count: countUnreadJobNotifications(accountEmail)
     });
   } catch (error) {
-    console.log(error);
+    logger.controllerError("Controller action failed", { error, controller: "notificationController", action: "readNotification" });
 
     return res.status(500).json({
       success: false,
@@ -83,7 +84,7 @@ export function readAllNotifications(req, res) {
       unread_count: markAllJobNotificationsAsRead(accountEmail)
     });
   } catch (error) {
-    console.log(error);
+    logger.controllerError("Controller action failed", { error, controller: "notificationController", action: "readAllNotifications" });
 
     return res.status(500).json({
       success: false,

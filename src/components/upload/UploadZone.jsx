@@ -85,6 +85,10 @@ export default function UploadZone({
   return (
     <div className="space-y-4">
       <div
+        role="button"
+        tabIndex={disabled || isUploading ? -1 : 0}
+        aria-disabled={disabled || isUploading}
+        aria-label={disabled ? disabledMessage : "Selecionar currículo em PDF ou DOCX"}
         onDragOver={(event) => {
           event.preventDefault();
 
@@ -99,7 +103,13 @@ export default function UploadZone({
             inputRef.current?.click();
           }
         }}
-        className={`relative rounded-2xl border-2 border-dashed p-12 text-center transition-colors duration-300 ${
+        onKeyDown={(event) => {
+          if (!disabled && !isUploading && ["Enter", " "].includes(event.key)) {
+            event.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        className={`relative rounded-2xl border-2 border-dashed p-6 text-center transition-colors duration-300 sm:p-12 ${
           disabled || isUploading ? "cursor-not-allowed opacity-70" : "cursor-pointer"
         } ${
           dragOver
@@ -130,7 +140,7 @@ export default function UploadZone({
       </div>
 
       {fileError && (
-        <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {fileError}
         </p>
       )}
@@ -144,7 +154,7 @@ export default function UploadZone({
             className="overflow-hidden"
             onSubmit={handleSubmit}
           >
-            <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/50 p-4">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/50 p-4">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2">
                   <FileText className="h-5 w-5 text-primary" />

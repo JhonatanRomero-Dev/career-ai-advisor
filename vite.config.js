@@ -4,21 +4,35 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    allowedHosts: [".trycloudflare.com"],
+    proxy: {
+      "/api": {
+        target: "http://[::1]:3000",
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      "/api": {
+        target: "http://[::1]:3000",
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes("node_modules")) {
-            return undefined;
-          }
+          if (!id.includes("node_modules")) return undefined;
+          const normalizedId = id.replaceAll("\\", "/");
 
-          if (id.includes("recharts")) {
-            return "recharts";
-          }
-
-          if (id.includes("d3-")) {
-            return "d3-vendor";
-          }
+          if (/node_modules\/(react|react-dom|react-router|react-router-dom)\//.test(normalizedId)) return "react-vendor";
+          if (normalizedId.includes("/framer-motion/")) return "motion-vendor";
+          if (normalizedId.includes("/@tanstack/")) return "query-vendor";
+          if (normalizedId.includes("/@radix-ui/")) return "radix-vendor";
+          if (normalizedId.includes("/lucide-react/")) return "icons-vendor";
 
           return undefined;
         },

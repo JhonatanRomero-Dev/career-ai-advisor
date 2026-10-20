@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  ThumbsUp,
+  ThumbsDown,
   User,
 } from "lucide-react";
 import { base44 } from "@/api/base44Client";
@@ -65,7 +67,7 @@ const faqItems = [
     icon: LifeBuoy,
     title: "Suporte humano",
     category: "Privacidade",
-    text: "Casos de conta, privacidade, exclusão de dados ou erro persistente devem ir para atendimento humano.",
+    text: "Para atendimento da equipe, abra Feedback, escolha Atendimento / suporte e descreva a dificuldade. Acompanhe o andamento em Seus feedbacks.",
   },
   {
     icon: CircleHelp,
@@ -92,6 +94,7 @@ export default function Support() {
   const [error, setError] = useState("");
   const [faqSearch, setFaqSearch] = useState("");
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [ratingPending, setRatingPending] = useState("");
   const [hasLoadedSavedChat, setHasLoadedSavedChat] = useState(false);
   const messagesEndRef = useRef(null);
   const chatStorageKey = currentUser?.email
@@ -150,13 +153,6 @@ export default function Support() {
 
         if (analyses.length > 0) {
           setLatestAnalysis(analyses[0]);
-          return;
-        }
-
-        const saved = localStorage.getItem("analysisResult");
-
-        if (saved) {
-          setLatestAnalysis(JSON.parse(saved).analysis);
         }
       } catch (contextError) {
         console.error("Erro ao carregar contexto do suporte:", contextError);
@@ -231,6 +227,8 @@ export default function Support() {
           fallback: Boolean(response.fallback),
           model: response.model,
           provider: response.provider,
+          interactionId: response.interaction_id,
+          sources: response.sources,
         },
       ]);
     } catch (chatError) {
@@ -241,7 +239,7 @@ export default function Support() {
         {
           role: "assistant",
           content:
-            "Não consegui acessar o suporte IA agora. Confira a configuração da chave de IA no backend ou tente novamente em alguns instantes.",
+            "Não consegui responder agora. Tente novamente em alguns instantes ou registre a dificuldade na página Feedback.",
         },
       ]);
     } finally {
@@ -252,6 +250,15 @@ export default function Support() {
   const handleSubmit = (event) => {
     event.preventDefault();
     sendMessage();
+  };
+
+  const rateReply = async (message, helpful) => {
+    setRatingPending(message.interactionId);
+    try {
+      await base44.product.request(`/support/${message.interactionId}/rating`, "POST", { helpful });
+      setMessages((current) => current.map((item) => item.interactionId === message.interactionId ? { ...item, helpful } : item));
+    } catch (ratingError) { setError(ratingError.message); }
+    finally { setRatingPending(""); }
   };
 
   const clearChat = () => {
@@ -274,7 +281,7 @@ export default function Support() {
   };
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
@@ -358,11 +365,8 @@ export default function Support() {
                             resposta local
                           </Badge>
                         )}
-                        {message.model && (
-                          <span className="text-[10px] text-muted-foreground">
-                            {message.provider}/{message.model}
-                          </span>
-                        )}
+                        {message.interactionId && <>{[[true, ThumbsUp, "Resposta útil"], [false, ThumbsDown, "Resposta não ajudou"]].map(([helpful, Icon, label]) => <button key={label} type="button" aria-label={label} aria-pressed={message.helpful === helpful} disabled={ratingPending === message.interactionId} onClick={() => rateReply(message, helpful)} className={`inline-flex min-h-8 items-center gap-1 rounded border px-2 text-xs ${message.helpful === helpful ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><Icon className="h-3 w-3" />{helpful ? "Útil" : "Não ajudou"}</button>)}</>}
+                        {message.sources?.map((source) => ["/profile", "/jobs", "/login", "/upload", "/feedback"].includes(source.path) && <Link key={source.path} to={source.path} className="text-xs text-primary underline">{source.title}</Link>)}
                         <button
                           type="button"
                           onClick={() => copyMessage(message.content, index)}
@@ -425,6 +429,7 @@ export default function Support() {
 
             <form onSubmit={handleSubmit} className="flex gap-3">
               <Textarea
+                aria-label="Mensagem para o suporte"
                 value={input}
                 onChange={(event) => setInput(event.target.value.slice(0, MAX_MESSAGE_CHARS))}
                 onKeyDown={(event) => {
@@ -436,7 +441,7 @@ export default function Support() {
                   placeholder="Digite sua dúvida..."
                 className="min-h-[52px] resize-none"
               />
-              <Button type="submit" className="h-[52px] px-4" disabled={isSending || !input.trim()}>
+              <Button type="submit" aria-label="Enviar mensagem" className="h-[52px] px-4" disabled={isSending || !input.trim()}>
                 <Send className="h-4 w-4" />
               </Button>
             </form>

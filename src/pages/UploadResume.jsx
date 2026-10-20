@@ -1,34 +1,140 @@
-import React, { useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, ArrowRight, BarChart3, BriefcaseBusiness, Clock, Crown, Shield, Sparkles, UserRound } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart3, BriefcaseBusiness, CheckCircle2, Clock, Crown, FileSearch, LoaderCircle, Shield, Sparkles, UploadCloud, UserRound } from "lucide-react";
 import { motion } from "framer-motion";
-import UpgradeModal from "@/components/layout/UpgradeModal";
 import UploadZone from "@/components/upload/UploadZone";
 import { saveResumeHistoryEntry } from "@/lib/resumeHistory";
-import { base44 } from "@/api/base44Client";
+import { API_BASE_URL, base44, getCsrfHeaders } from "@/api/base44Client";
 import { getStoredCurrentUser } from "@/lib/subscription";
+import { rememberLastAnalysisId } from "@/lib/analysisCache";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_BASE44_APP_BASE_URL ||
-  "http://localhost:3000";
+const UpgradeModal = lazy(() => import("@/components/layout/UpgradeModal"));
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(resolve, ms);
+
+    signal?.addEventListener("abort", () => {
+      window.clearTimeout(timeout);
+      reject(Object.assign(new Error("Operacao cancelada"), { name: "AbortError" }));
+    }, { once: true });
+  });
+}
+
+function getFriendlyUploadError(error) {
+  if (!navigator.onLine) {
+    return "Você está sem conexão. Verifique a internet e tente novamente; seu rascunho foi mantido.";
+  }
+
+  if (error?.name === "AbortError") {
+    return "A análise demorou mais do que o esperado. Tente novamente; se persistir, consulte o histórico em alguns instantes.";
+  }
+
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("sessão") || message.includes("sessao") || message.includes("401")) {
+    return "Sua sessão expirou. Entre novamente para continuar sem perder os dados preenchidos.";
+  }
+
+  if (message.includes("pdf") || message.includes("docx") || message.includes("arquivo")) {
+    return error.message;
+  }
+
+  return error?.message || "Não foi possível concluir a análise agora. Tente novamente em instantes.";
+}
+
+async function waitForAnalysisJob(jobId, signal) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const response = await fetch(`${API_BASE_URL}/api/analysis/jobs/${jobId}`, {
+      credentials: "include",
+      signal,
+    });
+    const data = await response.json().catch(() => ({
+      success: false,
+      error: "O backend respondeu em formato inesperado.",
+    }));
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || "Erro ao acompanhar a analise.");
+    }
+
+    if (data.job?.status === "completed") {
+      return data.job;
+    }
+
+    if (data.job?.status === "failed") {
+      throw new Error(data.job.error || "Nao foi possivel concluir a analise.");
+    }
+
+    await delay(1500, signal);
+  }
+
+  throw new Error("A analise ainda esta processando. Tente abrir o historico em instantes.");
+}
+
+const uploadStages = [
+  { id: "upload", label: "Enviando", icon: UploadCloud },
+  { id: "extract", label: "Lendo currículo", icon: FileSearch },
+  { id: "analyze", label: "Analisando", icon: Sparkles },
+  { id: "report", label: "Preparando relatório", icon: CheckCircle2 },
+];
 
 export default function UploadResume() {
   const [isUploading, setIsUploading] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [limitMessage, setLimitMessage] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadStage, setUploadStage] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [targetJobTitle, setTargetJobTitle] = useState("");
   const [targetJobDescription, setTargetJobDescription] = useState("");
   const [hasPrivacyConsent, setHasPrivacyConsent] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [lastAttemptFile, setLastAttemptFile] = useState(null);
   const navigate = useNavigate();
   const uploadTimeoutMs = 90000;
   const currentUser = getStoredCurrentUser();
+  const draftStorageKey = useMemo(
+    () => `career-ai-upload-draft:${currentUser?.id || currentUser?.email || "account"}`,
+    [currentUser?.email, currentUser?.id]
+  );
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftStorageKey) || "null");
+
+      if (saved) {
+        setTargetJobTitle(String(saved.targetJobTitle || ""));
+        setTargetJobDescription(String(saved.targetJobDescription || ""));
+        setHasPrivacyConsent(Boolean(saved.hasPrivacyConsent));
+        setDraftRestored(Boolean(saved.targetJobTitle || saved.targetJobDescription));
+      }
+    } catch {
+      localStorage.removeItem(draftStorageKey);
+    } finally {
+      setDraftReady(true);
+    }
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+
+    try {
+      localStorage.setItem(draftStorageKey, JSON.stringify({
+        targetJobTitle,
+        targetJobDescription,
+        hasPrivacyConsent,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (storageError) {
+      console.warn("Não foi possível salvar o rascunho do upload:", storageError);
+    }
+  }, [draftReady, draftStorageKey, hasPrivacyConsent, targetJobDescription, targetJobTitle]);
 
   const { data: profile, isLoading: isLoadingProfile } = useQuery({
     queryKey: ["user-profile", currentUser?.email],
@@ -73,8 +179,10 @@ export default function UploadResume() {
   const handleFileSelect = async (file) => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), uploadTimeoutMs);
+    const progressTimers = [];
 
     try {
+      setLastAttemptFile(file);
       if (reachedMonthlyLimit) {
         openUpgradeLimit();
         return;
@@ -89,6 +197,18 @@ export default function UploadResume() {
       setLimitMessage("");
       setUploadError("");
       setUploadMessage("Enviando currículo para análise...");
+      setUploadStage("upload");
+      base44.analytics.track("resume_upload_started", { has_target_job: Boolean(targetJobDescription.trim()) });
+      progressTimers.push(
+        window.setTimeout(() => {
+          setUploadStage("extract");
+          setUploadMessage("Lendo e organizando as informações do currículo...");
+        }, 1200),
+        window.setTimeout(() => {
+          setUploadStage("analyze");
+          setUploadMessage("Avaliando clareza, palavras-chave e compatibilidade ATS...");
+        }, 3500)
+      );
 
       const formData = new FormData();
 
@@ -110,16 +230,30 @@ export default function UploadResume() {
 
       const response = await fetch(`${API_BASE_URL}/api/analysis`, {
         method: "POST",
-        headers: base44.auth.getAuthHeaders(),
+        headers: {
+          ...base44.auth.getAuthHeaders(),
+          ...(await getCsrfHeaders()),
+        },
         body: formData,
+        credentials: "include",
         signal: controller.signal,
       });
 
-      setUploadMessage("Processando currículo...");
+      setUploadStage("analyze");
+      setUploadMessage("Avaliando clareza, palavras-chave e compatibilidade ATS...");
       const data = await response.json().catch(() => ({
         success: false,
         error: "O backend respondeu em formato inesperado."
       }));
+
+      if (response.status === 202 && data.job?.id) {
+        setUploadStage("analyze");
+        setUploadMessage("Sua análise está na fila e será concluída em instantes...");
+        const completedJob = await waitForAnalysisJob(data.job.id, controller.signal);
+
+        data.analysis = completedJob.analysis;
+        data.notification = completedJob.notification;
+      }
 
       if (!response.ok || !data.success) {
         if (response.status === 403 && data.code === "FREE_MONTHLY_LIMIT_REACHED") {
@@ -136,12 +270,9 @@ export default function UploadResume() {
       }
 
       setUploadMessage("Análise concluída. Abrindo seu relatório...");
-
-      try {
-        localStorage.setItem("analysisResult", JSON.stringify(data));
-      } catch (storageError) {
-        console.warn("Não foi possível salvar o resultado localmente:", storageError);
-      }
+      setUploadStage("report");
+      base44.analytics.track("resume_upload_completed", { has_target_job: Boolean(targetJobDescription.trim()) });
+      localStorage.removeItem(draftStorageKey);
 
       try {
         saveResumeHistoryEntry({
@@ -153,20 +284,20 @@ export default function UploadResume() {
       }
 
       if (data.analysis?.id) {
+        rememberLastAnalysisId(data.analysis.id);
         navigate(`/analysis?id=${data.analysis.id}`);
         return;
       }
 
       navigate("/dashboard");
     } catch (error) {
+      base44.analytics.track("resume_upload_failed", { error_code: error.name === "AbortError" ? "timeout" : "upload_error" });
       setUploadMessage("");
-      setUploadError(
-        error.name === "AbortError"
-          ? "A análise demorou mais do que o esperado. Tente novamente em instantes."
-          : error.message || "Erro ao enviar currículo"
-      );
+      setUploadStage("");
+      setUploadError(getFriendlyUploadError(error));
     } finally {
       window.clearTimeout(timeoutId);
+      progressTimers.forEach((timerId) => window.clearTimeout(timerId));
       setIsUploading(false);
     }
   };
@@ -183,7 +314,7 @@ export default function UploadResume() {
           </h1>
 
           <p className="text-muted-foreground mt-2">
-            Nossa IA vai analisar cada detalhe em segundos
+            Acompanhe cada etapa até o seu relatório ficar pronto
           </p>
         </div>
 
@@ -253,7 +384,13 @@ export default function UploadResume() {
               </div>
             </div>
             <div className="space-y-3">
+              {draftRestored && (
+                <p className="rounded-md bg-primary/10 px-3 py-2 text-xs text-primary" role="status">
+                  Recuperamos os dados da vaga que você estava preenchendo.
+                </p>
+              )}
               <input
+                aria-label="Cargo da vaga alvo"
                 type="text"
                 value={targetJobTitle}
                 onChange={(event) => setTargetJobTitle(event.target.value)}
@@ -263,6 +400,7 @@ export default function UploadResume() {
                 disabled={isUploading}
               />
               <Textarea
+                aria-label="Descrição da vaga alvo"
                 value={targetJobDescription}
                 onChange={(event) => setTargetJobDescription(event.target.value)}
                 maxLength={7000}
@@ -315,14 +453,55 @@ export default function UploadResume() {
           )}
 
           {uploadMessage && (
-            <div className="mt-5 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-medium text-foreground">
-              {uploadMessage}
+            <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-4" role="status" aria-live="polite">
+              <div className="grid grid-cols-4 gap-2" aria-label="Progresso da análise">
+                {uploadStages.map((stage, index) => {
+                  const activeIndex = uploadStages.findIndex((item) => item.id === uploadStage);
+                  const isComplete = activeIndex > index;
+                  const isActive = activeIndex === index;
+                  const Icon = isComplete || (isActive && stage.id === "report")
+                    ? CheckCircle2
+                    : isActive
+                      ? LoaderCircle
+                      : stage.icon;
+
+                  return (
+                    <div key={stage.id} className="min-w-0 text-center">
+                      <div className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full border ${
+                        isComplete || isActive
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-muted-foreground"
+                      }`}>
+                        <Icon className={`h-4 w-4 ${isActive && stage.id !== "report" ? "animate-spin" : ""}`} />
+                      </div>
+                      <p className={`mt-2 text-[10px] font-medium leading-tight sm:text-xs ${
+                        isComplete || isActive ? "text-foreground" : "text-muted-foreground"
+                      }`}>
+                        {stage.label}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-4 text-center text-sm font-medium text-foreground">{uploadMessage}</p>
             </div>
           )}
 
           {uploadError && (
-            <div className="mt-5 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {uploadError}
+            <div className="mt-5 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+              <p>{uploadError}</p>
+              {lastAttemptFile && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 bg-background text-foreground"
+                  disabled={isUploading}
+                  onClick={() => handleFileSelect(lastAttemptFile)}
+                >
+                  Tentar novamente
+                </Button>
+              )}
             </div>
           )}
         </Card>
@@ -330,7 +509,7 @@ export default function UploadResume() {
         <div className="grid grid-cols-3 gap-4 mt-8">
           {[
             { icon: Sparkles, text: "Análise com IA" },
-            { icon: Shield, text: "100% privado e seguro" },
+            { icon: Shield, text: "Dados protegidos" },
             { icon: Clock, text: "Resultado em segundos" },
           ].map((item, i) => (
             <div
@@ -349,7 +528,11 @@ export default function UploadResume() {
         </div>
       </motion.div>
 
-      <UpgradeModal open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+      {showUpgrade && (
+        <Suspense fallback={null}>
+          <UpgradeModal open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

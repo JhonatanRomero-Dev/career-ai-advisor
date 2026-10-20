@@ -15,21 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { base44 } from "@/api/base44Client";
 
-function PixIcon({ className }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M5.283 18.36a3.5 3.5 0 0 0 2.493-1.032l3.6-3.6a.684.684 0 0 1 .946 0l3.613 3.613a3.5 3.5 0 0 0 2.493 1.032h.71l-4.56 4.56a3.647 3.647 0 0 1-5.156 0L4.85 18.36ZM18.428 5.627a3.5 3.5 0 0 0-2.493 1.032l-3.613 3.614a.67.67 0 0 1-.946 0l-3.6-3.6A3.5 3.5 0 0 0 5.283 5.64h-.434l4.573-4.572a3.646 3.646 0 0 1 5.156 0l4.559 4.559ZM1.068 9.422L3.79 6.699h1.492a2.48 2.48 0 0 1 1.744.722l3.6 3.6a1.73 1.73 0 0 0 2.443 0l3.614-3.613a2.48 2.48 0 0 1 1.744-.723h1.767l2.737 2.737a3.646 3.646 0 0 1 0 5.156l-2.736 2.736h-1.768a2.48 2.48 0 0 1-1.744-.722l-3.613-3.613a1.77 1.77 0 0 0-2.444 0l-3.6 3.6a2.48 2.48 0 0 1-1.744.722H3.791l-2.723-2.723a3.646 3.646 0 0 1 0-5.156" />
-    </svg>
-  );
-}
-
 export default function PaymentModal({ open, onOpenChange, plan }) {
-  const [paymentMethod, setPaymentMethod] = useState("card");
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -51,9 +37,11 @@ export default function PaymentModal({ open, onOpenChange, plan }) {
     setError("");
 
     try {
+      base44.analytics.track("checkout_started", { plan: selectedPlan.name, source: "upgrade_modal" });
       const { checkout } = await base44.subscription.createCheckout(selectedPlan.name);
 
       if (checkout?.checkout_url) {
+        base44.analytics.track("checkout_redirected", { plan: selectedPlan.name, source: "mercadopago" });
         window.location.assign(checkout.checkout_url);
         return;
       }
@@ -69,7 +57,6 @@ export default function PaymentModal({ open, onOpenChange, plan }) {
   const handleOpenChange = (nextOpen) => {
     if (!nextOpen) {
       setSuccess(false);
-      setPaymentMethod("card");
       setError("");
     }
 
@@ -142,44 +129,17 @@ export default function PaymentModal({ open, onOpenChange, plan }) {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("card")}
-                  className={`rounded-lg border px-4 py-3 text-left transition-all ${
-                      paymentMethod === "card"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-card text-foreground hover:border-primary/40"
-                    }`}
-                  >
+                <div className="grid gap-3">
+                  <div className="rounded-lg border border-primary bg-primary/10 px-4 py-3 text-left text-primary">
                     <CreditCard className="mb-2 h-4 w-4" />
-                    <span className="text-sm font-semibold">Cartão</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("pix")}
-                    className={`rounded-lg border px-4 py-3 text-left transition-all ${
-                      paymentMethod === "pix"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-card text-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    <PixIcon className="mb-2 h-4 w-4" />
-                    <span className="text-sm font-semibold">Pix</span>
-                  </button>
+                    <span className="text-sm font-semibold">Cartão ou saldo Mercado Pago</span>
+                  </div>
                 </div>
 
-                {paymentMethod === "card" ? (
-                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                    Ao continuar, você será redirecionado para concluir o pagamento com cartão no
-                    checkout seguro.
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                    Ao continuar, você será redirecionado para concluir o pagamento com Pix no
-                    checkout seguro.
-                  </div>
-                )}
+                <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+                  Ao continuar, você autoriza cobranças mensais pelo checkout seguro do Mercado Pago.
+                  A renovação pode ser cancelada quando quiser.
+                </div>
 
                 <div className="rounded-lg border border-border bg-muted/40 p-4">
                   <div className="flex items-center justify-between text-sm">

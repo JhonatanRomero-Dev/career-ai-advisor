@@ -1,0 +1,30 @@
+[
+  {
+    "id": "frontend-junior",
+    "resume_text": "Ana Lima, desenvolvedora frontend junior. Experiencia com React, JavaScript, TypeScript, HTML, CSS, Git, testes e APIs REST. Criei telas acessiveis e reduzi o tempo de carregamento em 25%. Ingles intermediario.",
+    "target_job_title": "Desenvolvedora Frontend Junior",
+    "target_job_description": "React, TypeScript, JavaScript, CSS, Git, testes e consumo de API REST.",
+    "expect": { "area_contains": "Frontend", "skills": ["react", "javascript", "typescript"], "min_job_match": 60, "min_ats": 50 }
+  },
+  {
+    "id": "data-analyst",
+    "resume_text": "Carlos atua como analista de dados pleno usando Python, SQL, Power BI, Excel e estatistica. Automatizou relatorios e reduziu em 40% o tempo de fechamento mensal. Ingles avancado.",
+    "target_job_title": "Analista de Dados",
+    "target_job_description": "Conhecimentos de SQL, Python, Power BI, Excel e estatistica.",
+    "expect": { "area_contains": "Dados", "skills": ["python", "sql"], "min_job_match": 70, "min_ats": 50 }
+  },
+  {
+    "id": "administrative-assistant",
+    "resume_text": "Marina foi assistente administrativa em rotinas administrativas, atendimento ao cliente, organizacao e controle de documentos, arquivo, agenda, Excel, pacote office, emissao de notas fiscais e comunicacao com fornecedores. Reduziu o prazo de fechamento em 20%.",
+    "target_job_title": "Assistente Administrativo",
+    "target_job_description": "Atendimento ao cliente, Excel, pacote Office, organizacao e controle de documentos.",
+    "expect": { "area_contains": "Administr", "skills": ["pacote office", "rotinas administrativas"], "min_job_match": 40, "min_ats": 35 }
+  },
+  {
+    "id": "sparse-resume",
+    "resume_text": "Joao busca primeira oportunidade profissional. Curso tecnico concluido, boa comunicacao e vontade de aprender.",
+    "target_job_title": "",
+    "target_job_description": "",
+    "expect": { "max_ats": 50, "max_job_match": 0 }
+  }
+]

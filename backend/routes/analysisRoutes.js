@@ -8,13 +8,17 @@ import {
   analyzeResume,
   deleteAnalysis,
   generateImprovedResume,
+  getAnalysisJob,
   getAnalysisTasks,
   getAnalysisUsage,
   getAnalysis,
+  refreshRealJobs,
   listAnalyses,
+  listAnalysisJobs,
   updateAnalysisTasks
 } from "../controllers/analysisController.js";
 import { requireAuth } from "../middleware/authMiddleware.js";
+import { getResumeWorkspace, createResumeVersion, removeResumeVersion, proposeResumeRevision } from "../controllers/resumeWorkspaceController.js";
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -78,9 +82,16 @@ function uploadResume(req, res, next) {
 router.post("/", requireAuth, uploadResume, analyzeResume);
 router.get("/", requireAuth, listAnalyses);
 router.get("/usage", requireAuth, getAnalysisUsage);
+router.get("/jobs", requireAuth, listAnalysisJobs);
+router.get("/jobs/:jobId", requireAuth, getAnalysisJob);
 router.get("/:id/tasks", requireAuth, getAnalysisTasks);
+router.post("/:id/jobs/refresh", requireAuth, refreshRealJobs);
 router.patch("/:id/tasks", requireAuth, updateAnalysisTasks);
 router.post("/:id/improved-resume", requireAuth, generateImprovedResume);
+router.get("/:id/workspace", requireAuth, getResumeWorkspace);
+router.post("/:id/versions", requireAuth, createResumeVersion);
+router.delete("/:id/versions/:versionId", requireAuth, removeResumeVersion);
+router.post("/:id/revision", requireAuth, proposeResumeRevision);
 router.get("/:id", requireAuth, getAnalysis);
 router.delete("/:id", requireAuth, deleteAnalysis);
 

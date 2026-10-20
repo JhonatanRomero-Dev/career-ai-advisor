@@ -36,8 +36,10 @@ import { Textarea } from "@/components/ui/textarea";
 import ScoreGauge from "@/components/dashboard/ScoreGauge";
 import WeakWordsList from "@/components/analysis/WeakWordsList";
 import MissingKeywords from "@/components/analysis/MissingKeywords";
-import SuggestionsList from "@/components/analysis/SuggestionsList";
+import ImprovementTasks from "@/components/dashboard/ImprovementTasks";
 import JobCard from "@/components/dashboard/JobCard";
+import { readAuthSession } from "@/lib/authSession";
+import { clearLastAnalysisId, readLastAnalysisId } from "@/lib/analysisCache";
 
 const scoreGuide = [
   ["Nota ATS: leitura por filtros", "Indica se sistemas usados antes da triagem humana conseguem ler e classificar seu currículo. Não prevê contratação nem garante entrevista."],
@@ -93,18 +95,77 @@ function buildPriorityActions(analysis = {}) {
   return actions.slice(0, 4);
 }
 
-function buildRewriteExamples(analysis = {}) {
-  const weakWord = analysis.weak_words?.[0] || "responsável por";
-  const keyword = analysis.missing_keywords?.[0] || analysis.detected_skills?.[0] || "React";
+function buildRewriteExamples(evidence = []) {
+  return evidence.map((item) => ({ before: item.excerpt, after: item.suggestion }));
+}
+
+function scoreBand(score = 0) {
+  if (score >= 85) return "Forte";
+  if (score >= 70) return "Bom, com ajustes";
+  if (score >= 50) return "Atenção";
+  return "Prioritário";
+}
+
+function buildScoreExplanations(analysis = {}) {
+  const missingCount = analysis.missing_keywords?.length || 0;
+  const weakCount = analysis.weak_words?.length || 0;
+  const suggestionCount = analysis.suggestions?.length || 0;
+  const matchedCount = analysis.matched_keywords?.length || 0;
 
   return [
     {
-      before: `${weakWord} desenvolvimento de funcionalidades.`,
-      after: `Desenvolvi funcionalidades com ${keyword}, melhorando fluxo, clareza e entrega para usuários.`
+      title: "Nota ATS",
+      score: analysis.ats_score || 0,
+      reason: missingCount > 0
+        ? `${missingCount} palavra(s)-chave importante(s) ainda não aparecem com clareza no currículo.`
+        : "A estrutura e os termos principais já estão razoavelmente legíveis para filtros automáticos.",
+      next: missingCount > 0
+        ? "Inclua termos reais nas experiências onde você aplicou essas habilidades."
+        : "Mantenha títulos de seção simples e evite layouts muito complexos."
     },
     {
-      before: "Participação em projetos internos da equipe.",
-      after: "Contribui em projeto interno documentando requisitos, entregando tarefas e acompanhando indicadores de qualidade."
+      title: "Clareza",
+      score: analysis.clarity_score || 0,
+      reason: weakCount > 0
+        ? `${weakCount} termo(s) genérico(s) podem reduzir a força dos bullets.`
+        : "O texto já comunica melhor responsabilidades, habilidades e impacto.",
+      next: "Troque descrições vagas por verbo de ação, contexto e resultado mensurável."
+    },
+    {
+      title: "Compatibilidade",
+      score: analysis.market_compatibility || 0,
+      reason: matchedCount > 0
+        ? `${matchedCount} termo(s) de vaga alvo foram encontrados no currículo.`
+        : suggestionCount > 0
+          ? "As sugestões indicam lacunas de posicionamento para vagas semelhantes."
+          : "A compatibilidade está baseada no perfil detectado e nas habilidades presentes.",
+      next: analysis.target_job_title
+        ? "Ajuste o resumo e os bullets para refletir a vaga alvo sem inventar experiência."
+        : "Cole uma vaga alvo no próximo upload para receber um match mais específico."
+    }
+  ];
+}
+
+function buildReviewPlan(analysis = {}) {
+  const missing = analysis.missing_keywords || [];
+  const weak = analysis.weak_words || [];
+
+  return [
+    {
+      title: "10 minutos",
+      text: missing.length
+        ? `Revise onde incluir ${missing.slice(0, 3).join(", ")} com exemplos reais.`
+        : "Revise títulos de seção, cargo alvo e resumo profissional."
+    },
+    {
+      title: "30 minutos",
+      text: weak.length
+        ? `Reescreva bullets com termos fracos como ${weak.slice(0, 2).join(", ")}.`
+        : "Adicione números, escopo, ferramentas e resultados aos principais bullets."
+    },
+    {
+      title: "Próximo envio",
+      text: "Envie a versão revisada e compare evolução de ATS, clareza e compatibilidade no histórico."
     }
   ];
 }
@@ -168,11 +229,25 @@ export default function AnalysisReport() {
   const [improvedResume, setImprovedResume] = React.useState(null);
   const [improvedError, setImprovedError] = React.useState("");
   const [copiedImproved, setCopiedImproved] = React.useState(false);
+  const [savingDraft, setSavingDraft] = React.useState(false);
+  const [copiedSuggestionIndex, setCopiedSuggestionIndex] = React.useState(-1);
   const urlParams = new URLSearchParams(window.location.search);
   const analysisId = urlParams.get('id');
-  const isLogged = localStorage.getItem("logged") === "true";
+  const isLogged = readAuthSession().isAuthenticated;
 
-  const { data: analysis, isLoading, isError, error } = useQuery({
+  React.useEffect(() => {
+    if (analysisId) {
+      return;
+    }
+
+    const lastAnalysisId = readLastAnalysisId();
+
+    if (lastAnalysisId) {
+      navigate(`/analysis?id=${encodeURIComponent(lastAnalysisId)}`, { replace: true });
+    }
+  }, [analysisId, navigate]);
+
+  const { data: analysis, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['analysis', analysisId],
     queryFn: async () => {
       const results = await base44.entities.ResumeAnalysis.filter({ id: analysisId });
@@ -181,17 +256,12 @@ export default function AnalysisReport() {
     enabled: !!analysisId,
   });
 
-  let savedAnalysis = null;
+  const currentAnalysis = analysis;
+  const workspace = useQuery({ queryKey: ["resume-workspace", analysisId], queryFn: () => base44.analysis.getWorkspace(analysisId), enabled: Boolean(analysisId && analysis?.status === "completed") });
 
-  if (!analysisId) {
-    try {
-      savedAnalysis = JSON.parse(localStorage.getItem("analysisResult") || "{}")?.analysis || null;
-    } catch {
-      savedAnalysis = null;
-    }
-  }
-
-  const currentAnalysis = analysis || savedAnalysis;
+  React.useEffect(() => {
+    if (analysis?.id) base44.analytics.track("analysis_viewed", { has_target_job: Boolean(analysis.target_job_description) });
+  }, [analysis?.id, analysis?.target_job_description]);
 
   if (isLoading) {
     return (
@@ -223,6 +293,11 @@ export default function AnalysisReport() {
             <Link to="/history">
               <Button variant="outline">Ver histórico</Button>
             </Link>
+            {isError && (
+              <Button type="button" variant="outline" onClick={() => refetch()}>
+                Tentar novamente
+              </Button>
+            )}
           </div>
         </Card>
       </div>
@@ -242,7 +317,9 @@ export default function AnalysisReport() {
   }
 
   const priorityActions = buildPriorityActions(currentAnalysis);
-  const rewriteExamples = buildRewriteExamples(currentAnalysis);
+  const rewriteExamples = buildRewriteExamples(workspace.data?.evidence);
+  const scoreExplanations = buildScoreExplanations(currentAnalysis);
+  const reviewPlan = buildReviewPlan(currentAnalysis);
 
   const handleExport = async () => {
     try {
@@ -304,9 +381,30 @@ export default function AnalysisReport() {
     window.setTimeout(() => setCopiedImproved(false), 1800);
   };
 
+  const handleSaveImprovedResume = async () => {
+    setSavingDraft(true);
+    try {
+      const version = await base44.analysis.saveVersion(currentAnalysis.id, { name: "Currículo revisado", content: improvedResume.content });
+      await queryClient.invalidateQueries({ queryKey: ["resume-workspace", currentAnalysis.id] });
+      base44.analytics.track("resume_version_saved", { has_target_job: Boolean(currentAnalysis.target_job_description) });
+      navigate(`/resume?id=${encodeURIComponent(currentAnalysis.id)}&version=${encodeURIComponent(version.id)}`);
+    } catch (error) { setImprovedError(error.message); }
+    finally { setSavingDraft(false); }
+  };
+
+  const handleCopySuggestion = async (text, index) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedSuggestionIndex(index);
+    window.setTimeout(() => setCopiedSuggestionIndex(-1), 1800);
+  };
+
+  const handleApplySuggestion = (text) => {
+    navigate(`/resume?id=${encodeURIComponent(currentAnalysis.id)}&suggestion=${encodeURIComponent(text)}`);
+  };
+
   const handleDelete = async () => {
     if (!currentAnalysis?.id) {
-      localStorage.removeItem("analysisResult");
+      clearLastAnalysisId();
       navigate("/history", { replace: true });
       return;
     }
@@ -314,18 +412,7 @@ export default function AnalysisReport() {
     try {
       setIsDeleting(true);
       await base44.entities.ResumeAnalysis.delete(currentAnalysis.id);
-
-      let saved = {};
-
-      try {
-        saved = JSON.parse(localStorage.getItem("analysisResult") || "{}");
-      } catch {
-        saved = {};
-      }
-
-      if (saved?.analysis?.id === currentAnalysis.id) {
-        localStorage.removeItem("analysisResult");
-      }
+      clearLastAnalysisId(currentAnalysis.id);
 
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
       await queryClient.invalidateQueries({ queryKey: ["analysis", analysisId] });
@@ -354,6 +441,7 @@ export default function AnalysisReport() {
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Button asChild size="sm"><Link to={`/resume?id=${encodeURIComponent(currentAnalysis.id)}`}><Wand2 className="h-4 w-4" />Editar currículo e versões</Link></Button>
           <Button
             type="button"
             variant="outline"
@@ -374,7 +462,7 @@ export default function AnalysisReport() {
             ) : (
               <Download className="w-4 h-4 mr-2" />
             )}
-            Exportar PDF
+            Exportar relatório PDF
           </Button>
           <Link to="/upload">
             <Button variant="outline" size="sm">
@@ -440,6 +528,9 @@ export default function AnalysisReport() {
 
               {improvedResume?.content && (
                 <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" disabled={savingDraft || !improvedResume.content.trim()} onClick={handleSaveImprovedResume}>
+                    <FileText className="h-4 w-4" />{savingDraft ? "Salvando..." : "Salvar e abrir no editor"}
+                  </Button>
                   <Button type="button" variant="outline" size="sm" onClick={handleCopyImprovedResume}>
                     <Copy className="mr-2 h-4 w-4" />
                     {copiedImproved ? "Copiado" : "Copiar"}
@@ -467,6 +558,8 @@ export default function AnalysisReport() {
 
             {improvedResume?.content && (
               <Textarea
+                id="improved-resume-editor"
+                aria-label="Rascunho editável do currículo melhorado"
                 value={improvedResume.content}
                 onChange={(event) =>
                   setImprovedResume((current) => ({
@@ -519,6 +612,53 @@ export default function AnalysisReport() {
                   <p className="text-sm font-semibold text-foreground">{title}</p>
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">{text}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </motion.div>
+
+      <section className="space-y-2 border-y py-4 text-sm">
+        <h2 className="font-semibold">Critérios da avaliação</h2>
+        <p>{currentAnalysis.analysis_method === "local" ? "Análise por regras locais. A nota ATS usa cobertura de palavras-chave da área; clareza combina tamanho do texto e termos ausentes; compatibilidade considera habilidades detectadas e, quando fornecida, a vaga alvo." : currentAnalysis.analysis_method === "ai" ? "Análise com IA. As notas são estimativas do modelo a partir do texto, das habilidades e da vaga alvo. Podem variar entre análises." : "O método desta análise antiga não foi registrado."}</p>
+        <p className="text-muted-foreground">As notas não são uma validação de um ATS específico nem uma previsão de contratação. Termos ausentes só devem ser incluídos quando fizerem parte da sua experiência.</p>
+      </section>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {scoreExplanations.map((item) => (
+            <Card key={item.title} className="border-border/50 p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">{item.title}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{scoreBand(item.score)}</p>
+                </div>
+                <Badge variant={item.score >= 70 ? "secondary" : "destructive"}>
+                  {item.score}/100
+                </Badge>
+              </div>
+              <p className="text-sm leading-relaxed text-muted-foreground">{item.reason}</p>
+              <p className="mt-3 text-sm font-medium leading-relaxed text-foreground">{item.next}</p>
+            </Card>
+          ))}
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
+        <Card className="border-border/50 p-6">
+          <div className="mb-5 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-primary" />
+            <div>
+              <h2 className="font-semibold text-foreground">Plano de revisão</h2>
+              <p className="text-sm text-muted-foreground">
+                Um roteiro curto para transformar a análise em uma versão melhor do currículo.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {reviewPlan.map((step) => (
+              <div key={step.title} className="rounded-lg border border-border/60 bg-background p-4">
+                <p className="text-xs font-semibold uppercase text-primary">{step.title}</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
               </div>
             ))}
           </div>
@@ -602,9 +742,13 @@ export default function AnalysisReport() {
       </div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        <Card className="p-6 border-border/50">
-          <SuggestionsList suggestions={currentAnalysis.suggestions} />
-        </Card>
+          <ImprovementTasks
+            analysisId={currentAnalysis.id}
+            suggestions={currentAnalysis.suggestions}
+            copiedIndex={copiedSuggestionIndex}
+            onCopy={handleCopySuggestion}
+            onApply={handleApplySuggestion}
+          />
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
@@ -612,14 +756,17 @@ export default function AnalysisReport() {
           <div className="mb-5 flex items-center gap-2">
             <Wand2 className="h-5 w-5 text-primary" />
             <div>
-              <h2 className="font-semibold text-foreground">Exemplos de reescrita</h2>
+              <h2 className="font-semibold text-foreground">Trechos que merecem revisão</h2>
               <p className="text-sm text-muted-foreground">
-                Use como modelo e adapte com dados reais da sua experiência.
+                Evidências encontradas no texto original.
               </p>
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
+            {workspace.isLoading && <p role="status" className="text-sm">Carregando trechos...</p>}
+            {workspace.isError && <p role="alert" className="text-sm">Não foi possível carregar os trechos. <button className="underline" onClick={() => workspace.refetch()}>Tentar novamente</button></p>}
+            {workspace.data && !rewriteExamples.length && <p className="text-sm text-muted-foreground">{workspace.data.source_text ? "Nenhum trecho com os termos fracos indicados foi encontrado." : "O texto original não está mais disponível para conferir os trechos."}</p>}
             {rewriteExamples.map((example, index) => (
               <div key={index} className="rounded-lg border border-border/60 bg-background p-4">
                 <div className="mb-3">
@@ -629,9 +776,25 @@ export default function AnalysisReport() {
                 <div>
                   <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase text-emerald-600">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Depois
+                    Ação sugerida
                   </p>
                   <p className="text-sm font-medium leading-relaxed text-foreground">{example.after}</p>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => handleCopySuggestion(example.after, `rewrite-${index}`)}
+                  >
+                    {copiedSuggestionIndex === `rewrite-${index}` ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedSuggestionIndex === `rewrite-${index}` ? "Copiado" : "Copiar sugestão"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => handleApplySuggestion(example.after)}>
+                    <Wand2 className="h-3.5 w-3.5" />
+                    Revisar no editor
+                  </Button>
                 </div>
               </div>
             ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BriefcaseBusiness, Sparkles } from "lucide-react";
 
@@ -13,11 +13,17 @@ const routeMessages = {
 };
 
 export default function RouteTransitionLoader({ routeKey, pathname }) {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
+  const mounted = useRef(false);
   const prefersReducedMotion = useReducedMotion();
   const message = routeMessages[pathname] || "Carregando experiência";
 
   useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return undefined;
+    }
+
     setVisible(true);
 
     const timeout = window.setTimeout(

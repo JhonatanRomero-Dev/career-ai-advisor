@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
 import Groq from "groq-sdk";
+import { recordAIEvent } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -120,11 +121,23 @@ export async function createAIChatCompletion({
   responseFormat = "text",
   temperature = 0.4,
   maxTokens = 1200,
-  task = "ai"
+  task = "ai",
+  accountEmail = "",
+  context = {}
 }) {
   const provider = resolveProvider();
 
   if (!provider) {
+    recordAIEvent({
+      task,
+      provider: "local",
+      model: "",
+      status: "fallback",
+      accountEmail,
+      message: "AI provider not configured.",
+      context
+    });
+
     return null;
   }
 
@@ -143,6 +156,18 @@ export async function createAIChatCompletion({
     const completion = await provider.client.chat.completions.create(payload);
     const content = completion.choices[0]?.message?.content?.trim() || "";
 
+    if (!content) {
+      recordAIEvent({
+        task,
+        provider: provider.name,
+        model: provider.model,
+        status: "empty_response",
+        accountEmail,
+        message: "AI provider returned an empty response.",
+        context
+      });
+    }
+
     return {
       content,
       provider: provider.name,
@@ -153,6 +178,16 @@ export async function createAIChatCompletion({
       `Falha na chamada de IA (${task}) via ${provider.name}/${provider.model}. Usando fallback quando disponível:`,
       error.message
     );
+
+    recordAIEvent({
+      task,
+      provider: provider.name,
+      model: provider.model,
+      status: "failed",
+      accountEmail,
+      message: error.message,
+      context
+    });
 
     return null;
   }

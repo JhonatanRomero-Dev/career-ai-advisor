@@ -1,9 +1,15 @@
+import { logger } from "../src/logger.js";
 import crypto from "crypto";
 
 import {
+  cancelUserSubscription,
   createSubscriptionCheckout,
   getSubscriptionCheckoutById,
+  getSubscriptionCheckoutByProviderId,
   getUserSubscription,
+  markPaymentWebhookEventFailed,
+  markPaymentWebhookEventProcessed,
+  recordPaymentWebhookEvent,
   updateSubscriptionCheckoutProviderData,
   updateSubscriptionCheckoutStatus,
   updateUserSubscription
@@ -29,6 +35,7 @@ const PLAN_CATALOG = {
 
 const ALLOWED_PLANS = new Set(Object.keys(PLAN_CATALOG));
 const PAID_PLANS = new Set(["Pro", "Premium"]);
+const DEFAULT_SUBSCRIPTION_PERIOD_DAYS = 30;
 const MERCADO_PAGO_API_BASE_URL = "https://api.mercadopago.com";
 const allowDemoCheckout =
   process.env.ALLOW_DEMO_CHECKOUT === "true" || process.env.NODE_ENV === "test";
@@ -87,44 +94,6 @@ function getFrontendUrl() {
     .replace(/\/+$/, "");
 }
 
-function getBackendPublicUrl(req) {
-  const configuredUrl =
-    process.env.BACKEND_PUBLIC_URL ||
-    process.env.PUBLIC_BACKEND_URL ||
-    process.env.API_PUBLIC_URL ||
-    "";
-
-  if (configuredUrl) {
-    return configuredUrl.replace(/\/+$/, "");
-  }
-
-  const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0].trim();
-  const forwardedHost = String(req.get("x-forwarded-host") || "").split(",")[0].trim();
-  const protocol = forwardedProto || req.protocol || "http";
-  const host = forwardedHost || req.get("host");
-
-  return host ? `${protocol}://${host}`.replace(/\/+$/, "") : "";
-}
-
-function getMercadoPagoNotificationUrl(req) {
-  const configuredUrl =
-    process.env.MERCADO_PAGO_NOTIFICATION_URL ||
-    process.env.MP_NOTIFICATION_URL ||
-    "";
-
-  if (configuredUrl) {
-    return configuredUrl;
-  }
-
-  const backendUrl = getBackendPublicUrl(req);
-
-  if (!backendUrl || /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(backendUrl)) {
-    return "";
-  }
-
-  return `${backendUrl}/api/subscription/webhook/mercadopago`;
-}
-
 function toPublicCheckout(checkout) {
   if (!checkout) {
     return null;
@@ -158,11 +127,25 @@ function parseMercadoPagoSignature(header = "") {
 }
 
 function safeCompareHex(left, right) {
+  if (!/^[a-f0-9]+$/i.test(String(left || "")) || !/^[a-f0-9]+$/i.test(String(right || ""))) {
+    return false;
+  }
+
   const leftBuffer = Buffer.from(String(left || ""), "hex");
   const rightBuffer = Buffer.from(String(right || ""), "hex");
 
   return leftBuffer.length === rightBuffer.length &&
     crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getMercadoPagoNotificationId(req) {
+  return String(
+    req.get("x-request-id") ||
+      req.body?.id ||
+      req.body?.notification_id ||
+      req.query?.notification_id ||
+      ""
+  ).trim();
 }
 
 function getMercadoPagoPaymentId(req) {
@@ -186,11 +169,20 @@ function isValidMercadoPagoWebhookSignature(req, dataId) {
   const signature = parseMercadoPagoSignature(req.get("x-signature"));
   const requestId = req.get("x-request-id");
 
-  if (!dataId || !requestId || !signature.ts || !signature.v1) {
+  if (!signature.ts || !signature.v1) {
     return false;
   }
 
-  const manifest = `id:${dataId};request-id:${requestId};ts:${signature.ts};`;
+  const manifest = [
+    dataId ? `id:${dataId};` : "",
+    requestId ? `request-id:${requestId};` : "",
+    signature.ts ? `ts:${signature.ts};` : ""
+  ].join("");
+
+  if (!manifest) {
+    return false;
+  }
+
   const digest = crypto
     .createHmac("sha256", secret)
     .update(manifest)
@@ -200,12 +192,19 @@ function isValidMercadoPagoWebhookSignature(req, dataId) {
 }
 
 async function mercadopagoRequest(pathname, options = {}) {
+  const {
+    headers = {},
+    idempotencyKey = "",
+    ...fetchOptions
+  } = options;
+
   const response = await fetch(`${MERCADO_PAGO_API_BASE_URL}${pathname}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
       Authorization: `Bearer ${getMercadoPagoAccessToken()}`,
       "Content-Type": "application/json",
-      ...(options.headers || {})
+      ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
+      ...headers
     }
   });
   const data = await response.json().catch(() => ({}));
@@ -218,59 +217,77 @@ async function mercadopagoRequest(pathname, options = {}) {
   return data;
 }
 
-function getMercadoPagoCheckoutUrl(preference) {
-  const useSandbox =
-    process.env.MERCADO_PAGO_USE_SANDBOX === "true" ||
-    getMercadoPagoAccessToken().startsWith("TEST-");
-
-  if (useSandbox) {
-    return preference.sandbox_init_point || preference.init_point || "";
-  }
-
-  return preference.init_point || preference.sandbox_init_point || "";
+function getMercadoPagoCheckoutUrl(resource) {
+  return resource.init_point || resource.sandbox_init_point || "";
 }
 
-async function createMercadoPagoPreference(req, planDetails, checkout) {
+async function createMercadoPagoSubscription(req, planDetails, checkout) {
   const frontendUrl = getFrontendUrl();
-  const notificationUrl = getMercadoPagoNotificationUrl(req);
-  const preferencePayload = {
-    items: [
-      {
-        id: `career-ai-${planDetails.name.toLowerCase()}`,
-        title: planDetails.title,
-        description: `Plano ${planDetails.name} do Career AI Advisor`,
-        quantity: 1,
-        currency_id: "BRL",
-        unit_price: planDetails.amountCents / 100
-      }
-    ],
-    payer: {
-      name: req.user.name,
-      email: req.user.email
-    },
+  const checkoutReturnParams = `checkout_id=${encodeURIComponent(checkout.id)}&plan=${encodeURIComponent(planDetails.name)}`;
+  const payload = {
+    reason: planDetails.title,
+    payer_email: req.user.email,
     external_reference: checkout.id,
-    metadata: {
-      checkout_id: checkout.id,
-      user_id: req.user.id,
-      plan: planDetails.name
+    auto_recurring: {
+      frequency: 1,
+      frequency_type: "months",
+      transaction_amount: planDetails.amountCents / 100,
+      currency_id: "BRL"
     },
-    back_urls: {
-      success: `${frontendUrl}/dashboard?checkout=success&plan=${encodeURIComponent(planDetails.name)}`,
-      failure: `${frontendUrl}/?checkout=failure`,
-      pending: `${frontendUrl}/dashboard?checkout=pending&plan=${encodeURIComponent(planDetails.name)}`
-    },
-    auto_return: "approved",
-    statement_descriptor: "CAREER AI"
+    back_url: `${frontendUrl}/dashboard?checkout=subscription&${checkoutReturnParams}`,
+    status: "pending"
   };
 
-  if (notificationUrl) {
-    preferencePayload.notification_url = notificationUrl;
+  return mercadopagoRequest("/preapproval", {
+    method: "POST",
+    idempotencyKey: checkout.id,
+    body: JSON.stringify(payload)
+  });
+}
+
+function normalizeMercadoPagoSubscriptionStatus(status = "") {
+  const value = String(status || "").toLowerCase();
+
+  if (value === "authorized") return "active";
+  if (value === "paused") return "past_due";
+  if (["cancelled", "canceled"].includes(value)) return "canceled";
+  return value || "pending";
+}
+
+function applyMercadoPagoSubscription(checkout, subscription) {
+  const reference = String(subscription.external_reference || "").trim();
+
+  if (reference && reference !== checkout.id) {
+    throw new Error("Assinatura nao pertence a este checkout.");
   }
 
-  return mercadopagoRequest("/checkout/preferences", {
-    method: "POST",
-    body: JSON.stringify(preferencePayload)
+  const providerStatus = String(subscription.status || "pending").toLowerCase();
+  const status = normalizeMercadoPagoSubscriptionStatus(providerStatus);
+  const updatedCheckout = updateSubscriptionCheckoutStatus(checkout.id, {
+    status: providerStatus,
+    rawResponse: subscription
   });
+
+  if (providerStatus === "authorized") {
+    updateUserSubscription(checkout.user_id, checkout.plan, "mercadopago", {
+      status: "active",
+      providerSubscriptionId: String(subscription.id || checkout.provider_checkout_id || ""),
+      nextPaymentAt: subscription.next_payment_date || null,
+      periodEnd: subscription.next_payment_date || null,
+      lastPaymentAt: subscription.last_modified || subscription.date_created || null
+    });
+  } else if (["paused"].includes(providerStatus)) {
+    updateUserSubscription(checkout.user_id, checkout.plan, "mercadopago", {
+      status,
+      providerSubscriptionId: String(subscription.id || checkout.provider_checkout_id || ""),
+      nextPaymentAt: subscription.next_payment_date || null,
+      periodEnd: subscription.next_payment_date || null
+    });
+  } else if (["cancelled", "canceled"].includes(providerStatus)) {
+    cancelUserSubscription(checkout.user_id);
+  }
+
+  return { checkout: updatedCheckout, status, activated: providerStatus === "authorized" };
 }
 
 function normalizeMercadoPagoPaymentStatus(status = "") {
@@ -287,6 +304,100 @@ function normalizeMercadoPagoPaymentStatus(status = "") {
   return value || "pending";
 }
 
+function getPaymentCheckoutReference(payment = {}) {
+  return String(
+    payment.external_reference ||
+      payment.metadata?.checkout_id ||
+      ""
+  ).trim();
+}
+
+function getPaymentAmountCents(payment = {}) {
+  const amount = Number(payment.transaction_amount ?? payment.total_paid_amount ?? 0);
+
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+}
+
+function isExpectedPaymentForCheckout(payment, checkout) {
+  const paymentCurrency = String(payment.currency_id || checkout.currency || "").toUpperCase();
+  const checkoutCurrency = String(checkout.currency || "").toUpperCase();
+  const amountCents = getPaymentAmountCents(payment);
+
+  return paymentCurrency === checkoutCurrency &&
+    amountCents === Number(checkout.amount_cents || 0);
+}
+
+function shouldDowngradeSubscriptionForPaymentStatus(status, previousCheckoutStatus) {
+  if (["charged_back", "refunded"].includes(status)) {
+    return true;
+  }
+
+  return ["cancelled", "rejected"].includes(status) &&
+    previousCheckoutStatus === "approved";
+}
+
+function applyMercadoPagoPaymentToCheckout(checkout, payment) {
+  const checkoutReference = getPaymentCheckoutReference(payment);
+
+  if (checkoutReference && checkoutReference !== checkout.id) {
+    throw new Error("Pagamento nao pertence a este checkout.");
+  }
+
+  const status = normalizeMercadoPagoPaymentStatus(payment.status);
+  const providerPaymentId = String(payment.id || "").trim();
+  const paymentMatchesCheckout = isExpectedPaymentForCheckout(payment, checkout);
+  const previousStatus = checkout.status;
+  const nextStatus = status === "approved" && !paymentMatchesCheckout
+    ? "review_required"
+    : status;
+  const updatedCheckout = updateSubscriptionCheckoutStatus(checkout.id, {
+    status: nextStatus,
+    providerPaymentId,
+    rawResponse: payment
+  });
+
+  if (status === "approved" && !paymentMatchesCheckout) {
+    return {
+      checkout: updatedCheckout,
+      status: nextStatus,
+      activated: false,
+      reviewRequired: true
+    };
+  }
+
+  if (status === "approved" && previousStatus !== "approved") {
+    const currentSubscription = getUserSubscription(updatedCheckout.user_id);
+    const shouldActivate = currentSubscription.plan !== updatedCheckout.plan ||
+      !["active", "canceling"].includes(currentSubscription.status);
+
+    if (shouldActivate) {
+      updateUserSubscription(updatedCheckout.user_id, updatedCheckout.plan, "mercadopago", {
+        periodDays: DEFAULT_SUBSCRIPTION_PERIOD_DAYS
+      });
+    }
+
+    return {
+      checkout: updatedCheckout,
+      status,
+      activated: shouldActivate,
+      reviewRequired: false
+    };
+  }
+
+  if (shouldDowngradeSubscriptionForPaymentStatus(status, previousStatus)) {
+    updateUserSubscription(updatedCheckout.user_id, "Gratis", "mercadopago", {
+      status
+    });
+  }
+
+  return {
+    checkout: updatedCheckout,
+    status,
+    activated: false,
+    reviewRequired: false
+  };
+}
+
 export function getSubscription(req, res) {
   try {
     return res.json({
@@ -294,7 +405,7 @@ export function getSubscription(req, res) {
       subscription: getUserSubscription(req.user.id)
     });
   } catch (error) {
-    console.error(error);
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "getSubscription" });
 
     return res.status(500).json({
       success: false,
@@ -326,17 +437,17 @@ export async function createCheckout(req, res) {
       });
 
       try {
-        const preference = await createMercadoPagoPreference(req, planDetails, checkout);
-        const checkoutUrl = getMercadoPagoCheckoutUrl(preference);
+        const subscription = await createMercadoPagoSubscription(req, planDetails, checkout);
+        const checkoutUrl = getMercadoPagoCheckoutUrl(subscription);
 
         if (!checkoutUrl) {
           throw new Error("Mercado Pago não retornou URL de checkout.");
         }
 
         const updatedCheckout = updateSubscriptionCheckoutProviderData(checkout.id, {
-          providerCheckoutId: preference.id,
+          providerCheckoutId: subscription.id,
           checkoutUrl,
-          rawResponse: preference
+          rawResponse: subscription
         });
 
         return res.status(201).json({
@@ -380,14 +491,63 @@ export async function createCheckout(req, res) {
         status: "approved",
         checkout_url: null
       },
-      subscription: updateUserSubscription(req.user.id, plan, "demo")
+      subscription: updateUserSubscription(req.user.id, plan, "demo", {
+        periodDays: DEFAULT_SUBSCRIPTION_PERIOD_DAYS
+      })
     });
   } catch (error) {
-    console.error(error);
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "createCheckout" });
 
     return res.status(502).json({
       success: false,
       error: error.message || "Não foi possível iniciar o checkout."
+    });
+  }
+}
+
+export async function getCheckoutStatus(req, res) {
+  try {
+    const checkout = getSubscriptionCheckoutById(req.params.checkoutId);
+
+    if (!checkout || checkout.user_id !== req.user.id) {
+      return res.status(404).json({
+        success: false,
+        error: "Checkout nao encontrado."
+      });
+    }
+
+    let currentCheckout = checkout;
+
+    if (checkout.provider === "mercadopago" && isMercadoPagoConfigured()) {
+      const paymentId = String(
+        req.query.payment_id ||
+          req.query.collection_id ||
+          checkout.provider_payment_id ||
+          ""
+      ).trim();
+
+      if (checkout.provider_checkout_id) {
+        const subscription = await mercadopagoRequest(`/preapproval/${encodeURIComponent(checkout.provider_checkout_id)}`);
+        currentCheckout = applyMercadoPagoSubscription(checkout, subscription).checkout;
+      } else if (paymentId) {
+        const payment = await mercadopagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`);
+        const result = applyMercadoPagoPaymentToCheckout(checkout, payment);
+
+        currentCheckout = result.checkout;
+      }
+    }
+
+    return res.json({
+      success: true,
+      checkout: toPublicCheckout(currentCheckout),
+      subscription: getUserSubscription(req.user.id)
+    });
+  } catch (error) {
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "getCheckoutStatus" });
+
+    return res.status(502).json({
+      success: false,
+      error: error.message || "Nao foi possivel consultar o checkout."
     });
   }
 }
@@ -412,10 +572,12 @@ export function activateDemoSubscription(req, res) {
 
     return res.json({
       success: true,
-      subscription: updateUserSubscription(req.user.id, plan, "demo")
+      subscription: updateUserSubscription(req.user.id, plan, "demo", {
+        periodDays: DEFAULT_SUBSCRIPTION_PERIOD_DAYS
+      })
     });
   } catch (error) {
-    console.error(error);
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "activateDemoSubscription" });
 
     return res.status(500).json({
       success: false,
@@ -424,7 +586,210 @@ export function activateDemoSubscription(req, res) {
   }
 }
 
+export async function cancelSubscription(req, res) {
+  try {
+    const current = getUserSubscription(req.user.id);
+
+    if (current.provider_subscription_id && isMercadoPagoConfigured()) {
+      await mercadopagoRequest(`/preapproval/${encodeURIComponent(current.provider_subscription_id)}`, {
+        method: "PUT",
+        idempotencyKey: `cancel-${current.provider_subscription_id}`,
+        body: JSON.stringify({ status: "cancelled" })
+      });
+    }
+
+    return res.json({
+      success: true,
+      subscription: cancelUserSubscription(req.user.id)
+    });
+  } catch (error) {
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "cancelSubscription" });
+
+    return res.status(500).json({
+      success: false,
+      error: "Não foi possível cancelar sua assinatura."
+    });
+  }
+}
+
 export async function handleMercadoPagoWebhook(req, res) {
+  return handleMercadoPagoWebhookWithIdempotency(req, res);
+}
+
+async function handleMercadoPagoWebhookWithIdempotency(req, res) {
+  let webhookEvent = null;
+
+  try {
+    if (!isMercadoPagoConfigured()) {
+      return res.status(501).json({
+        success: false,
+        error: "Mercado Pago nao esta configurado."
+      });
+    }
+
+    const paymentId = getMercadoPagoPaymentId(req);
+
+    if (!paymentId) {
+      return res.json({
+        success: true,
+        received: true,
+        ignored: true
+      });
+    }
+
+    if (!isValidMercadoPagoWebhookSignature(req, paymentId)) {
+      return res.status(401).json({
+        success: false,
+        error: "Assinatura do webhook invalida."
+      });
+    }
+
+    const recorded = recordPaymentWebhookEvent({
+      provider: "mercadopago",
+      providerEventId: getMercadoPagoNotificationId(req),
+      eventType: req.query?.type || req.body?.type || "payment",
+      action: req.body?.action || "",
+      resourceType: req.query?.type || req.body?.type || "payment",
+      resourceId: paymentId,
+      requestId: req.get("x-request-id") || "",
+      rawPayload: {
+        query: req.query,
+        body: req.body
+      }
+    });
+    webhookEvent = recorded.event;
+
+    if (
+      recorded.duplicate &&
+      ["processed", "ignored", "review_required"].includes(webhookEvent.processing_status)
+    ) {
+      return res.json({
+        success: true,
+        received: true,
+        duplicate: true,
+        status: webhookEvent.payment_status
+      });
+    }
+
+    const eventType = String(req.query?.type || req.body?.type || "payment").toLowerCase();
+
+    if (["subscription_preapproval", "subscription_authorized_payment"].includes(eventType)) {
+      let subscriptionId = paymentId;
+
+      if (eventType === "subscription_authorized_payment") {
+        const invoice = await mercadopagoRequest(`/authorized_payments/${encodeURIComponent(paymentId)}`);
+        subscriptionId = String(invoice.preapproval_id || invoice.subscription_id || "").trim();
+      }
+
+      if (!subscriptionId) {
+        markPaymentWebhookEventProcessed(webhookEvent.id, {
+          processingStatus: "ignored",
+          paymentStatus: "missing_subscription_id",
+          errorMessage: "Notificacao recorrente sem identificador de assinatura."
+        });
+        return res.json({ success: true, received: true, ignored: true });
+      }
+
+      const subscription = await mercadopagoRequest(`/preapproval/${encodeURIComponent(subscriptionId)}`);
+      const checkoutId = String(subscription.external_reference || "").trim();
+      const checkout = (checkoutId && getSubscriptionCheckoutById(checkoutId)) ||
+        getSubscriptionCheckoutByProviderId(subscriptionId);
+
+      if (!checkout || checkout.provider !== "mercadopago") {
+        markPaymentWebhookEventProcessed(webhookEvent.id, {
+          processingStatus: "ignored",
+          paymentStatus: normalizeMercadoPagoSubscriptionStatus(subscription.status),
+          errorMessage: "Checkout nao encontrado para a assinatura."
+        });
+        return res.json({ success: true, received: true, ignored: true });
+      }
+
+      const result = applyMercadoPagoSubscription(checkout, subscription);
+      markPaymentWebhookEventProcessed(webhookEvent.id, {
+        checkoutId: checkout.id,
+        paymentStatus: result.status,
+        processingStatus: "processed"
+      });
+
+      return res.json({
+        success: true,
+        received: true,
+        recurring: true,
+        status: result.status,
+        activated: result.activated
+      });
+    }
+
+    const payment = await mercadopagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`);
+    const checkoutId = getPaymentCheckoutReference(payment);
+
+    if (!checkoutId) {
+      markPaymentWebhookEventProcessed(webhookEvent.id, {
+        processingStatus: "ignored",
+        providerPaymentId: String(payment.id || paymentId),
+        paymentStatus: normalizeMercadoPagoPaymentStatus(payment.status),
+        errorMessage: "Pagamento sem external_reference."
+      });
+
+      return res.json({
+        success: true,
+        received: true,
+        ignored: true
+      });
+    }
+
+    const checkout = getSubscriptionCheckoutById(checkoutId);
+
+    if (!checkout || checkout.provider !== "mercadopago") {
+      markPaymentWebhookEventProcessed(webhookEvent.id, {
+        processingStatus: "ignored",
+        checkoutId,
+        providerPaymentId: String(payment.id || paymentId),
+        paymentStatus: normalizeMercadoPagoPaymentStatus(payment.status),
+        errorMessage: "Checkout nao encontrado para o pagamento."
+      });
+
+      return res.json({
+        success: true,
+        received: true,
+        ignored: true
+      });
+    }
+
+    const result = applyMercadoPagoPaymentToCheckout(checkout, payment);
+
+    markPaymentWebhookEventProcessed(webhookEvent.id, {
+      checkoutId: result.checkout.id,
+      providerPaymentId: String(payment.id || paymentId),
+      paymentStatus: result.status,
+      processingStatus: result.reviewRequired ? "review_required" : "processed",
+      errorMessage: result.reviewRequired
+        ? "Pagamento aprovado com valor ou moeda divergente."
+        : ""
+    });
+
+    return res.json({
+      success: true,
+      received: true,
+      status: result.status,
+      activated: result.activated,
+      review_required: result.reviewRequired
+    });
+  } catch (error) {
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "handleMercadoPagoWebhook" });
+
+    if (webhookEvent?.id) {
+      markPaymentWebhookEventFailed(webhookEvent.id, error.message);
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "Nao foi possivel processar o webhook de pagamento."
+    });
+  }
+}
+
+export async function handleMercadoPagoWebhookLegacy(req, res) {
   try {
     if (!isMercadoPagoConfigured()) {
       return res.status(501).json({
@@ -481,7 +846,15 @@ export async function handleMercadoPagoWebhook(req, res) {
     });
 
     if (status === "approved") {
-      updateUserSubscription(updatedCheckout.user_id, updatedCheckout.plan, "mercadopago");
+      updateUserSubscription(updatedCheckout.user_id, updatedCheckout.plan, "mercadopago", {
+        periodDays: DEFAULT_SUBSCRIPTION_PERIOD_DAYS
+      });
+    }
+
+    if (["cancelled", "charged_back", "refunded", "rejected"].includes(status)) {
+      updateUserSubscription(updatedCheckout.user_id, "Gratis", "mercadopago", {
+        status
+      });
     }
 
     return res.json({
@@ -490,7 +863,7 @@ export async function handleMercadoPagoWebhook(req, res) {
       status
     });
   } catch (error) {
-    console.error(error);
+    logger.controllerError("Controller action failed", { error, controller: "subscriptionController", action: "handleMercadoPagoWebhookLegacy" });
 
     return res.status(500).json({
       success: false,

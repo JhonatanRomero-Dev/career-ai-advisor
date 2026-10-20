@@ -1,132 +1,26 @@
-import React, { useState, useEffect } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+﻿import { ListChecks, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { CheckCircle2, Circle, ListChecks, Trophy } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import SuggestionsList from "@/components/analysis/SuggestionsList";
+import useAnalysisTasks from "@/components/analysis/useAnalysisTasks";
 
-export default function ImprovementTasks({ suggestions = [], analysisId }) {
-  const storageKey = `tasks_${analysisId}`;
-  const canSync = Boolean(analysisId && !String(analysisId).startsWith("local-"));
-
-  const [checked, setChecked] = useState(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-  const { data: remoteTasks } = useQuery({
-    queryKey: ["analysis-tasks", analysisId],
-    queryFn: () => base44.analysis.getTasks(analysisId),
-    enabled: canSync,
-    staleTime: 30000,
-  });
-  const updateTasksMutation = useMutation({
-    mutationFn: (nextChecked) => base44.analysis.updateTasks(analysisId, nextChecked),
-  });
-
-  useEffect(() => {
-    if (remoteTasks?.checked) {
-      setChecked(remoteTasks.checked);
-    }
-  }, [remoteTasks]);
-
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(checked));
-  }, [checked, storageKey]);
-
-  const toggle = (index) => {
-    setChecked((prev) => {
-      const next = { ...prev, [index]: !prev[index] };
-
-      if (canSync) {
-        updateTasksMutation.mutate(next);
-      }
-
-      return next;
-    });
-  };
-
-  const completedCount = suggestions.filter((_, i) => checked[i]).length;
+export default function ImprovementTasks({ suggestions = [], analysisId, onCopy, onApply, copiedIndex }) {
+  const tasks = useAnalysisTasks(analysisId);
+  const completed = suggestions.filter((_, index) => tasks.checked[index] === true).length;
   const total = suggestions.length;
-  const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+  if (!total) return null;
 
-  if (!suggestions || suggestions.length === 0) return null;
-
-  return (
-    <Card className="p-6 border-border/50">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-primary/10">
-            <ListChecks className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground">Melhorias pendentes</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{completedCount} de {total} concluídas</p>
-          </div>
-        </div>
-        <span className="text-sm font-bold text-primary">{progress}%</span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="w-full h-1.5 bg-muted rounded-full mb-5 overflow-hidden">
-        <motion.div
-          className="h-full bg-primary rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-        />
-      </div>
-
-      {/* All done banner */}
-      <AnimatePresence>
-        {completedCount === total && total > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-4">
-              <Trophy className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-              <p className="text-sm font-medium text-emerald-700">Todas as melhorias foram concluídas! Envie um novo currículo para ver o impacto.</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <ul className="space-y-2.5">
-        {suggestions.map((suggestion, i) => (
-          <motion.li
-            key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.06 }}
-          >
-            <button
-              onClick={() => toggle(i)}
-              className="w-full flex items-start gap-3 text-left group"
-            >
-              <div className="mt-0.5 flex-shrink-0">
-                {checked[i] ? (
-                  <CheckCircle2 className="w-5 h-5 text-primary" />
-                ) : (
-                  <Circle className="w-5 h-5 text-muted-foreground/40 group-hover:text-primary/50 transition-colors" />
-                )}
-              </div>
-              <span className={`text-sm leading-relaxed transition-all duration-200 ${
-                checked[i]
-                  ? "line-through text-muted-foreground/50"
-                  : "text-foreground group-hover:text-primary"
-              }`}>
-                {suggestion}
-              </span>
-            </button>
-          </motion.li>
-        ))}
-      </ul>
-    </Card>
-  );
+  return <Card className="space-y-4 border-border/50 p-4 sm:p-6" role="region" aria-label="Checklist de melhorias">
+    <div className="flex items-center gap-3"><ListChecks className="h-5 w-5 shrink-0 text-primary" /><div>
+      <h3 className="font-semibold">Checklist de melhorias</h3>
+      <p className="mt-1 text-xs text-muted-foreground">Marque o que você já ajustou no currículo.</p>
+    </div></div>
+    <p role="status" className="text-sm text-muted-foreground">{tasks.isLoading ? "Carregando progresso..." : tasks.isSaving ? "Salvando progresso..." : `${completed} de ${total} concluídas`}</p>
+    <Progress value={Math.round(completed / total * 100)} aria-label="Melhorias concluídas" />
+    {tasks.loadError && <div role="alert" className="space-y-2 text-sm text-destructive"><p>Não foi possível carregar o progresso.</p><Button type="button" variant="outline" onClick={() => tasks.refetch()}>Tentar novamente</Button></div>}
+    {tasks.saveError && <p role="alert" className="text-sm text-destructive">Não foi possível salvar essa alteração. Tente marcar a melhoria novamente.</p>}
+    {completed === total && <p className="flex items-start gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm"><Trophy className="h-5 w-5 shrink-0 text-primary" />Todas as melhorias foram concluídas. Envie uma nova versão para comparar o resultado.</p>}
+    <SuggestionsList suggestions={suggestions} checked={tasks.inputChecked} onToggle={tasks.toggle} disabled={tasks.disabled} onCopy={onCopy} onApply={onApply} copiedIndex={copiedIndex} />
+  </Card>;
 }

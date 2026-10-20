@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  Github,
   FileCheck2,
   Lock,
   Mail,
@@ -15,13 +16,13 @@ import {
   Sparkles,
   UserPlus,
 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ThemeToggle from "@/components/theme/ThemeToggle";
-import { readAuthSession } from "@/lib/authSession";
+import { base44, checkApiHealth } from "@/api/base44Client";
+import { readAuthSession, sanitizeAuthRedirectPath } from "@/lib/authSession";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
@@ -92,12 +93,10 @@ function LinkedInLogo({ className }) {
 const SOCIAL_PROVIDERS = [
   { id: "linkedin", label: "LinkedIn", Icon: LinkedInLogo },
   { id: "google", label: "Google", Icon: GoogleLogo },
+  { id: "github", label: "GitHub", Icon: Github },
   { id: "apple", label: "Apple", Icon: AppleLogo },
   { id: "facebook", label: "Facebook", Icon: FacebookLogo },
 ];
-
-const PRIMARY_SOCIAL_PROVIDER = SOCIAL_PROVIDERS[0];
-const SECONDARY_SOCIAL_PROVIDERS = SOCIAL_PROVIDERS.slice(1);
 
 export default function Login() {
   const navigate = useNavigate();
@@ -109,10 +108,26 @@ export default function Login() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [socialSubmitting, setSocialSubmitting] = useState("");
+  const [oauthProviders, setOauthProviders] = useState(null);
+  const [emailCodeAvailable, setEmailCodeAvailable] = useState(null);
+  useEffect(() => {
+    let active = true;
+    base44.auth.oauthProviders().then((data) => {
+      if (!active) return;
+      setOauthProviders(data.providers);
+      setEmailCodeAvailable(Boolean(data.email_code_available));
+      if (data.email_code_available) setMode((current) => current === "login" ? "email-code" : current);
+    }).catch(() => { if (active) { setOauthProviders([]); setEmailCodeAvailable(false); } });
+    return () => { active = false; };
+  }, []);
+  const socialAvailable = (id) => oauthProviders?.some((provider) => provider.id === id && provider.available) === true;
+  const availableSocialProviders = SOCIAL_PROVIDERS.filter((provider) => socialAvailable(provider.id));
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [mode, setMode] = useState("login");
   const [step, setStep] = useState("credentials");
+  const [backendStatus, setBackendStatus] = useState("checking");
+  const [backendCheckNonce, setBackendCheckNonce] = useState(0);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -125,8 +140,28 @@ export default function Login() {
 
   const nextPath = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("next") || "/dashboard";
+    return sanitizeAuthRedirectPath(params.get("next") || "/dashboard");
   }, [location.search]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function verifyBackendHealth() {
+      setBackendStatus("checking");
+
+      const healthy = await checkApiHealth();
+
+      if (active) {
+        setBackendStatus(healthy ? "ready" : "down");
+      }
+    }
+
+    verifyBackendHealth();
+
+    return () => {
+      active = false;
+    };
+  }, [backendCheckNonce]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -244,8 +279,7 @@ export default function Login() {
   };
 
   const formatCodeNotice = (message, response) => {
-    const canShowDevCode =
-      import.meta.env.DEV && import.meta.env.VITE_SHOW_DEV_AUTH_CODE === "true";
+    const canShowDevCode = import.meta.env.VITE_SHOW_DEV_AUTH_CODE === "true";
 
     if (!canShowDevCode || !response?.dev_code) {
       return message;
@@ -286,7 +320,7 @@ export default function Login() {
       return;
     }
 
-    if (!form.password) {
+    if (mode !== "email-code" && !form.password) {
       setError("Informe sua senha para continuar.");
       return;
     }
@@ -295,7 +329,12 @@ export default function Login() {
       setIsSubmitting(true);
       let codeResponse;
 
-      if (mode === "register") {
+      if (mode === "email-code") {
+        codeResponse = await base44.auth.requestEmailLoginCode({ email });
+        setForm((current) => ({ ...current, email, code: "" }));
+        setNotice(formatCodeNotice("Enviamos um código de 6 dígitos para seu e-mail.", codeResponse));
+        setStep("verification");
+      } else if (mode === "register") {
         if (!form.name.trim()) {
           setError("Informe seu nome para criar a conta.");
           return;
@@ -358,10 +397,12 @@ export default function Login() {
       setIsSubmitting(true);
       setError("");
       setNotice("");
-      const codeResponse = await base44.auth.requestVerificationCode({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-      });
+      const codeResponse = mode === "email-code"
+        ? await base44.auth.requestEmailLoginCode({ email: form.email.trim().toLowerCase() })
+        : await base44.auth.requestVerificationCode({
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+        });
       setForm((current) => ({ ...current, code: "" }));
       setNotice(
         formatCodeNotice(
@@ -469,6 +510,8 @@ export default function Login() {
   };
 
   const isRegistering = mode === "register";
+  const isEmailCode = mode === "email-code";
+  const isBackendReady = backendStatus === "ready";
   const cardTitle =
     step === "verification"
       ? "Confirme seu e-mail"
@@ -478,7 +521,7 @@ export default function Login() {
         ? "Nova senha"
         : isRegistering
           ? "Criar conta"
-          : "Entrar na conta";
+          : isEmailCode ? "Entrar com código" : "Entrar na conta";
   const cardDescription =
     step === "verification"
       ? "Digite o código enviado para o seu e-mail."
@@ -488,7 +531,9 @@ export default function Login() {
         ? "Crie uma nova senha usando o código enviado."
         : isRegistering
           ? "Cadastre-se para guardar suas análises e acompanhar seu progresso."
-          : "Entre com seu e-mail e senha para acessar sua conta.";
+          : isEmailCode
+            ? "Receba um código no e-mail para entrar ou criar sua conta."
+            : "Entre com seu e-mail e senha para acessar sua conta.";
   const submitLabel = isSubmitting
     ? step === "verification"
       ? "Verificando..."
@@ -498,7 +543,7 @@ export default function Login() {
         ? "Redefinindo..."
         : isRegistering
           ? "Criando conta..."
-          : "Entrando..."
+          : isEmailCode ? "Enviando código..." : "Entrando..."
     : step === "verification"
       ? "Verificar código"
       : step === "password-request"
@@ -507,7 +552,7 @@ export default function Login() {
         ? "Redefinir senha"
         : isRegistering
           ? "Criar conta"
-          : "Entrar";
+          : isEmailCode ? "Enviar código" : "Entrar";
 
   return (
     <div className="min-h-screen bg-background">
@@ -600,11 +645,38 @@ export default function Login() {
               <p className="mt-2 text-sm text-muted-foreground">{cardDescription}</p>
             </div>
 
-            {step === "credentials" && (
+            {backendStatus !== "ready" && (
+              <div
+                className={`mb-6 rounded-lg border px-3 py-3 text-sm ${
+                  backendStatus === "down"
+                    ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    : "border-border bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="leading-relaxed">
+                    {backendStatus === "down"
+                      ? "O servidor de autenticação não respondeu. Tente novamente em instantes."
+                      : "Verificando a conexão com o backend..."}
+                  </p>
+                  {backendStatus === "down" && (
+                    <button
+                      type="button"
+                      className="shrink-0 font-medium text-primary hover:underline"
+                      onClick={() => setBackendCheckNonce((current) => current + 1)}
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {step === "credentials" && emailCodeAvailable && (
               <div className="mb-6 grid grid-cols-2 rounded-lg bg-muted p-1">
                 <button
                   type="button"
-                  onClick={() => switchMode("login")}
+                  onClick={() => switchMode(emailCodeAvailable ? "email-code" : "login")}
                   className={`inline-flex h-10 items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors ${
                     !isRegistering
                       ? "bg-background text-foreground shadow-sm"
@@ -629,6 +701,31 @@ export default function Login() {
               </div>
             )}
 
+            {step === "credentials" && !isRegistering && emailCodeAvailable && (
+              <div className="mb-6 grid grid-cols-2 rounded-lg border border-border p-1">
+                <button
+                  type="button"
+                  onClick={() => switchMode("email-code")}
+                  className={`h-10 rounded-md text-sm font-semibold ${isEmailCode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Código por e-mail
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode("login")}
+                  className={`h-10 rounded-md text-sm font-semibold ${!isEmailCode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Senha
+                </button>
+              </div>
+            )}
+
+            {step === "credentials" && !isRegistering && emailCodeAvailable === false && (
+              <p className="mb-6 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-sm text-amber-700 dark:text-amber-300">
+                O envio de códigos por e-mail ainda precisa ser configurado. Entre com sua senha.
+              </p>
+            )}
+
             <form
               onSubmit={
                 step === "password-request"
@@ -641,51 +738,34 @@ export default function Login() {
             >
               {step === "credentials" ? (
                 <>
-                  <div className="space-y-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSocialLogin(PRIMARY_SOCIAL_PROVIDER)}
-                      disabled={isSubmitting || Boolean(socialSubmitting)}
-                      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0A66C2] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#084f96] disabled:pointer-events-none disabled:opacity-60"
-                    >
-                      <PRIMARY_SOCIAL_PROVIDER.Icon className="h-5 w-5 flex-shrink-0" />
-                      <span>
-                        {socialSubmitting === PRIMARY_SOCIAL_PROVIDER.id
-                          ? "Abrindo LinkedIn..."
-                          : "Continuar com LinkedIn"}
-                      </span>
-                    </button>
-
-                    <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                      Se o e-mail do LinkedIn for o mesmo da sua conta, o acesso será vinculado automaticamente.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3">
-                    {SECONDARY_SOCIAL_PROVIDERS.map((provider) => (
+                  {availableSocialProviders.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {availableSocialProviders.map((provider) => (
                       <button
                         key={provider.id}
                         type="button"
                         onClick={() => handleSocialLogin(provider)}
-                        disabled={isSubmitting || Boolean(socialSubmitting)}
+                        disabled={isSubmitting || Boolean(socialSubmitting) || !isBackendReady}
+                        title={`Continuar com ${provider.label}`}
                         aria-label={`Continuar com ${provider.label}`}
                         className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
                       >
                         <provider.Icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="hidden sm:inline">
+                        <span>
                           {socialSubmitting === provider.id ? "Abrindo..." : provider.label}
                         </span>
                       </button>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
 
-                  <div className="flex items-center gap-3">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-xs font-medium uppercase text-muted-foreground">
-                      {isRegistering ? "ou cadastre com e-mail" : "ou com e-mail"}
-                    </span>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
+                  {availableSocialProviders.length > 0 && (
+                    <div className="flex items-center gap-3">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-xs font-medium uppercase text-muted-foreground">ou com e-mail</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
 
                   {isRegistering && (
                     <div className="space-y-2">
@@ -721,10 +801,10 @@ export default function Login() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  {!isEmailCode && <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <Label htmlFor="password">Senha</Label>
-                      {!isRegistering && (
+                      {!isRegistering && emailCodeAvailable && (
                         <button
                           type="button"
                           className="text-xs font-medium text-primary hover:underline"
@@ -765,7 +845,7 @@ export default function Login() {
                         Use pelo menos {PASSWORD_MIN_LENGTH} caracteres.
                       </p>
                     )}
-                  </div>
+                  </div>}
 
                   {isRegistering && (
                     <div className="space-y-2">
@@ -804,7 +884,9 @@ export default function Login() {
                     <div className="flex gap-2">
                       <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                       <p>
-                        {isRegistering
+                        {isEmailCode
+                          ? "O código será enviado para este endereço. Ao confirmá-lo, sua conta será criada se ainda não existir."
+                          : isRegistering
                           ? "Depois do cadastro, enviaremos um código temporário para confirmar o e-mail."
                           : "Se sua conta já estiver confirmada, você entra direto. Se ainda faltar confirmação, enviaremos um código."}
                       </p>
@@ -1032,7 +1114,7 @@ export default function Login() {
                 </div>
               )}
 
-              <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
+              <Button type="submit" className="h-11 w-full" disabled={isSubmitting || !isBackendReady}>
                 {submitLabel}
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -1040,9 +1122,11 @@ export default function Login() {
 
             <p className="mt-6 text-center text-sm text-muted-foreground">
               {step === "credentials"
-                ? isRegistering
-                  ? "Já tem conta? Use a opção Entrar acima."
-                  : "Não tem conta? Use a opção Criar conta acima."
+                ? emailCodeAvailable === false
+                  ? "Cadastro e recuperação de senha exigem o envio de códigos por e-mail."
+                  : isRegistering
+                    ? "Já tem conta? Use a opção Entrar acima."
+                    : "Não tem conta? Use a opção Criar conta acima."
                 : step === "password-request"
                   ? "Use o e-mail cadastrado na sua conta."
                   : step === "password-reset"

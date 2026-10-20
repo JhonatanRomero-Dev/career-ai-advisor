@@ -120,6 +120,14 @@ let responseData = null;
 
 try {
   const uploadUrl = liveUploadUrl || `http://127.0.0.1:${server.address().port}/api/analysis`;
+  const baseUrl = uploadUrl.replace(/\/api\/analysis$/, "");
+  const csrfResponse = await fetch(`${baseUrl}/api/auth/csrf`, {
+    headers: {
+      Authorization: `Bearer ${session.token}`
+    }
+  });
+  const csrf = await csrfResponse.json();
+  const csrfCookie = csrfResponse.headers.get("set-cookie")?.split(";")[0] || "";
   const docx = createDocxBuffer(
     "João Silva desenvolvedor backend com Node Express SQL MongoDB API Docker AWS inglês intermediário telefone 11999990000 email joao.teste@example.com projetos com métricas e resultados."
   );
@@ -137,7 +145,9 @@ try {
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${session.token}`
+      Authorization: `Bearer ${session.token}`,
+      Cookie: csrfCookie,
+      "x-csrf-token": csrf.csrf_token
     },
     body: form
   });

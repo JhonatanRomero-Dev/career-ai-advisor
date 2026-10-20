@@ -24,7 +24,7 @@ export default function SplashScreen() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       setActiveStep((current) => (current + 1) % steps.length);
-    }, 850);
+    }, 400);
 
     return () => window.clearInterval(interval);
   }, []);
@@ -122,12 +122,12 @@ export default function SplashScreen() {
               className="h-full rounded-full bg-primary"
               initial={{ width: "0%" }}
               animate={{ width: "100%" }}
-              transition={{ duration: 2.8, ease: "easeInOut" }}
+              transition={{ duration: 1.25, ease: "easeInOut" }}
             />
           </div>
 
           <p className="mt-4 text-xs font-medium text-muted-foreground">
-            Carregando experiência personalizada...
+            Preparando seu espaço...
           </p>
         </div>
       </div>

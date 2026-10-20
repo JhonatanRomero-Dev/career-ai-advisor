@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { isMobileDemoLoginEnabled } from "./mobileDemo.js";
 
 const REQUIRED_SMTP_CONFIG = [
   "SMTP_HOST",
@@ -34,7 +35,7 @@ function getMissingSmtpConfig() {
 function hasSmtpConfig() {
   const config = getSmtpConfig();
 
-  return getMissingSmtpConfig().length === 0 && Number.isFinite(config.port) && config.port > 0;
+  return getMissingSmtpConfig().length === 0 && Number.isInteger(config.port) && config.port > 0 && config.port <= 65535;
 }
 
 function createEmailUnavailableError(reason = "SMTP_UNAVAILABLE", details = {}) {
@@ -59,12 +60,28 @@ export function getEmailConfigSummary() {
   };
 }
 
-function canUseDevEmailFallback() {
-  return process.env.NODE_ENV === "test" ||
-    (
-      process.env.NODE_ENV !== "production" &&
-      process.env.ALLOW_DEV_EMAIL_FALLBACK === "true"
-    );
+function canUseDevEmailFallback(email = "") {
+  if (process.env.NODE_ENV === "test") {
+    return true;
+  }
+
+  const testEmail = isMobileDemoLoginEnabled()
+    ? ""
+    : String(process.env.DEV_AUTH_TEST_EMAIL || "").trim().toLowerCase();
+  if (testEmail && String(email).trim().toLowerCase() !== testEmail) {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== "production" &&
+    process.env.ALLOW_DEV_EMAIL_FALLBACK === "true";
+}
+
+export function assertEmailDeliveryConfigured(email = "") {
+  if (!hasSmtpConfig() && !canUseDevEmailFallback(email)) {
+    throw createEmailUnavailableError("SMTP_CONFIG_MISSING", {
+      missing: getMissingSmtpConfig()
+    });
+  }
 }
 
 function createDevEmailDelivery({ email, code, subject }) {
@@ -98,15 +115,10 @@ export async function sendPasswordResetCode(email, code) {
 }
 
 async function sendCodeEmail({ email, code, subject, heading, intro }) {
+  assertEmailDeliveryConfigured(email);
   if (!hasSmtpConfig()) {
-    if (canUseDevEmailFallback()) {
-      console.warn("SMTP não configurado. Usando código local de desenvolvimento.");
-      return createDevEmailDelivery({ email, code, subject });
-    }
-
-    throw createEmailUnavailableError("SMTP_CONFIG_MISSING", {
-      missing: getMissingSmtpConfig()
-    });
+    console.warn("SMTP não configurado. Usando código local de desenvolvimento.");
+    return createDevEmailDelivery({ email, code, subject });
   }
 
   const config = getSmtpConfig();
@@ -136,7 +148,7 @@ async function sendCodeEmail({ email, code, subject, heading, intro }) {
       `
     });
   } catch (error) {
-    if (canUseDevEmailFallback()) {
+    if (canUseDevEmailFallback(email)) {
       console.warn("Falha no SMTP. Usando código local de desenvolvimento.", error.message);
       return createDevEmailDelivery({ email, code, subject });
     }

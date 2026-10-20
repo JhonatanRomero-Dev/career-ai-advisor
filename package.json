@@ -5,11 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:frontend": "vite",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:all": "node scripts/dev-all.js",
     "build": "vite build",
+    "build:check": "vite build && node scripts/check-bundle-size.js",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
+    "test:e2e": "playwright test",
     "test:backend": "cd backend && npm test",
+    "eval:ai": "cd backend && npm run eval:ai",
+    "eval:ai:live": "cd backend && npm run eval:ai:live",
+    "eval:support": "cd backend && npm run eval:support",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -63,7 +71,6 @@
     "react-markdown": "^9.0.1",
     "react-resizable-panels": "^2.1.7",
     "react-router-dom": "^6.26.0",
-    "recharts": "^2.15.4",
     "sonner": "^2.0.1",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7",
@@ -71,7 +78,9 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.19.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.13.5",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",

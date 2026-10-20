@@ -3,3 +3,12 @@ node_modules
 dist
 build
 uploads
+backend/uploads
+backend/data/*.sqlite
+backend/data/*.sqlite-*
+backend/data/*.db
+backend/data/*.db-*
+backend/backups/
+.codex-logs
+test-results
+playwright-report

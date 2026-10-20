@@ -28,6 +28,42 @@ import {
 } from "@/components/ui/alert-dialog";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
+import { clearLastAnalysisId } from "@/lib/analysisCache";
+
+function completedAnalyses(analyses = []) {
+  return analyses.filter((analysis) => analysis.status === "completed");
+}
+
+function uniqueValues(values = []) {
+  return Array.from(new Set(values.filter(Boolean).map((value) => String(value))));
+}
+
+function compareArrays(current = [], previous = []) {
+  const currentValues = uniqueValues(current);
+  const previousValues = new Set(uniqueValues(previous));
+  const previousList = uniqueValues(previous);
+  const currentSet = new Set(currentValues);
+
+  return {
+    added: currentValues.filter((value) => !previousValues.has(value)),
+    removed: previousList.filter((value) => !currentSet.has(value))
+  };
+}
+
+function deltaValue(current = 0, previous = 0) {
+  return Number(current || 0) - Number(previous || 0);
+}
+
+function deltaClass(delta) {
+  if (delta > 0) return "text-emerald-600";
+  if (delta < 0) return "text-destructive";
+  return "text-muted-foreground";
+}
+
+function formatDelta(delta) {
+  if (delta > 0) return `+${delta}`;
+  return String(delta);
+}
 
 export default function AnalysisHistory() {
   const queryClient = useQueryClient();
@@ -36,23 +72,33 @@ export default function AnalysisHistory() {
     queryFn: () => base44.entities.ResumeAnalysis.list('-created_date', 50),
   });
   const [deletingId, setDeletingId] = React.useState("");
+  const comparableAnalyses = React.useMemo(() => completedAnalyses(analyses), [analyses]);
+  const [compareCurrentId, setCompareCurrentId] = React.useState("");
+  const [comparePreviousId, setComparePreviousId] = React.useState("");
+
+  React.useEffect(() => {
+    if (comparableAnalyses.length < 2 || compareCurrentId || comparePreviousId) {
+      return;
+    }
+
+    setCompareCurrentId(comparableAnalyses[0].id);
+    setComparePreviousId(comparableAnalyses[1].id);
+  }, [comparableAnalyses, compareCurrentId, comparePreviousId]);
+
+  const currentComparison = comparableAnalyses.find((analysis) => analysis.id === compareCurrentId);
+  const previousComparison = comparableAnalyses.find((analysis) => analysis.id === comparePreviousId);
+  const keywordComparison = currentComparison && previousComparison
+    ? compareArrays(currentComparison.detected_skills, previousComparison.detected_skills)
+    : { added: [], removed: [] };
+  const missingKeywordComparison = currentComparison && previousComparison
+    ? compareArrays(currentComparison.missing_keywords, previousComparison.missing_keywords)
+    : { added: [], removed: [] };
 
   const handleDelete = async (analysis) => {
     try {
       setDeletingId(analysis.id);
       await base44.entities.ResumeAnalysis.delete(analysis.id);
-
-      let saved = {};
-
-      try {
-        saved = JSON.parse(localStorage.getItem("analysisResult") || "{}");
-      } catch {
-        saved = {};
-      }
-
-      if (saved?.analysis?.id === analysis.id) {
-        localStorage.removeItem("analysisResult");
-      }
+      clearLastAnalysisId(analysis.id);
 
       await queryClient.invalidateQueries({ queryKey: ["analyses"] });
     } finally {
@@ -122,7 +168,7 @@ export default function AnalysisHistory() {
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Histórico de análises</h1>
@@ -132,6 +178,108 @@ export default function AnalysisHistory() {
           <Button size="sm"><Upload className="w-4 h-4 mr-2" /> Nova análise</Button>
         </Link>
       </div>
+
+      {comparableAnalyses.length >= 2 && (
+        <Card className="border-border/50 p-5">
+          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="font-semibold text-foreground">Comparar versões</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Veja se a versão revisada melhorou as notas e quais habilidades entraram ou saíram.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                value={compareCurrentId}
+                onChange={(event) => setCompareCurrentId(event.target.value)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {comparableAnalyses.map((analysis) => (
+                  <option key={analysis.id} value={analysis.id}>
+                    Atual: {analysis.file_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={comparePreviousId}
+                onChange={(event) => setComparePreviousId(event.target.value)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {comparableAnalyses.map((analysis) => (
+                  <option key={analysis.id} value={analysis.id}>
+                    Base: {analysis.file_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {currentComparison && previousComparison && currentComparison.id !== previousComparison.id ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ["ATS", currentComparison.ats_score, previousComparison.ats_score],
+                  ["Clareza", currentComparison.clarity_score, previousComparison.clarity_score],
+                  ["Compatibilidade", currentComparison.market_compatibility, previousComparison.market_compatibility],
+                ].map(([label, current, previous]) => {
+                  const delta = deltaValue(current, previous);
+
+                  return (
+                    <div key={label} className="rounded-lg border border-border/60 bg-background p-4">
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+                      <div className="mt-2 flex items-end justify-between gap-3">
+                        <p className="text-2xl font-bold text-foreground">{current || 0}</p>
+                        <p className={`text-sm font-semibold ${deltaClass(delta)}`}>
+                          {formatDelta(delta)}
+                        </p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">base {previous || 0}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-border/60 bg-background p-4">
+                  <p className="text-sm font-semibold text-foreground">Habilidades detectadas novas</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {keywordComparison.added.slice(0, 8).join(", ") || "Nenhuma habilidade nova detectada."}
+                  </p>
+                  {keywordComparison.removed.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Saíram: {keywordComparison.removed.slice(0, 6).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-border/60 bg-background p-4">
+                  <p className="text-sm font-semibold text-foreground">Lacunas de palavra-chave</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {missingKeywordComparison.removed.slice(0, 8).join(", ") || "Nenhuma lacuna importante foi removida."}
+                  </p>
+                  {missingKeywordComparison.added.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Novas lacunas: {missingKeywordComparison.added.slice(0, 6).join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Link to={`/analysis?id=${currentComparison.id}`}>
+                  <Button variant="outline" size="sm">Abrir versão atual</Button>
+                </Link>
+                <Link to={`/analysis?id=${previousComparison.id}`}>
+                  <Button variant="ghost" size="sm">Abrir base</Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Escolha duas análises diferentes para comparar.
+            </p>
+          )}
+        </Card>
+      )}
 
       <div className="space-y-3">
         {analyses.map((analysis, i) => (

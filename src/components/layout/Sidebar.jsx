@@ -1,25 +1,32 @@
-import React, { useState } from "react";
+import React, { lazy, Suspense, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Upload, History, Briefcase, Sparkles,
-  ChevronLeft, ChevronRight, LogOut, Crown, User, LifeBuoy } from
+  ChevronLeft, ChevronRight, LogOut, Crown, User, LifeBuoy, ShieldCheck, MessageSquareText } from
 "lucide-react";
 import { base44 } from "@/api/base44Client";
-import UpgradeModal from "./UpgradeModal";
+import { readAuthSession } from "@/lib/authSession";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 
-const navItems = [
+const UpgradeModal = lazy(() => import("./UpgradeModal"));
+
+const baseNavItems = [
 { icon: LayoutDashboard, label: "Painel", path: "/dashboard" },
 { icon: Upload, label: "Enviar currículo", path: "/upload" },
 { icon: History, label: "Histórico de análises", path: "/history" },
 { icon: Briefcase, label: "Vagas compatíveis", path: "/jobs" },
 { icon: User, label: "Perfil", path: "/profile" },
-{ icon: LifeBuoy, label: "Suporte IA", path: "/support" }];
+{ icon: LifeBuoy, label: "Suporte IA", path: "/support" },
+{ icon: MessageSquareText, label: "Feedback", path: "/feedback" }];
 
 
 export default function Sidebar({ collapsed = false, onCollapsedChange }) {
   const [showUpgrade, setShowUpgrade] = useState(false);
   const location = useLocation();
+  const isAdmin = Boolean(readAuthSession().user?.is_admin);
+  const navItems = isAdmin
+    ? [...baseNavItems, { icon: ShieldCheck, label: "Admin", path: "/admin" }]
+    : baseNavItems;
   const setCollapsed = (value) => {
     onCollapsedChange?.(value);
   };
@@ -56,7 +63,11 @@ export default function Sidebar({ collapsed = false, onCollapsedChange }) {
         })}
       </nav>
 
-      <UpgradeModal open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+      {showUpgrade && (
+        <Suspense fallback={null}>
+          <UpgradeModal open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+        </Suspense>
+      )}
 
       <div className="p-3 space-y-2 border-t border-sidebar-border">
         {!collapsed &&
@@ -93,8 +104,8 @@ export default function Sidebar({ collapsed = false, onCollapsedChange }) {
       </div>
     </aside>
 
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-2 py-2 shadow-lg backdrop-blur md:hidden">
-      <div className="grid grid-cols-6 gap-1">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-2 pt-2 shadow-lg backdrop-blur md:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+      <div className="flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5 [-webkit-overflow-scrolling:touch]">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
 
@@ -103,7 +114,7 @@ export default function Sidebar({ collapsed = false, onCollapsedChange }) {
               key={item.path}
               to={item.path}
               aria-label={item.label}
-              className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors ${
+              className={`flex min-h-12 min-w-15 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[10px] font-medium transition-colors ${
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"

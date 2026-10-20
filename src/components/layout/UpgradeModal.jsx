@@ -13,7 +13,7 @@ const plans = [
     features: [
       "3 análises de currículo por mês",
       "Nota ATS básica",
-      "8 recomendações de vagas",
+      "Até 8 anúncios reais compatíveis",
       "Análise de palavras-chave ausentes",
     ],
     cta: "Plano atual",

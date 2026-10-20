@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +16,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import PaymentModal from "@/components/payment/PaymentModal";
 import {
   Sparkles,
   FileSearch,
@@ -30,11 +30,16 @@ import {
   ShieldCheck,
   LogOut,
   UserCircle,
+  Eye,
+  HeartHandshake,
+  RotateCcw,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { base44 } from "@/api/base44Client";
 import { readAuthSession } from "@/lib/authSession";
+
+const PaymentModal = lazy(() => import("@/components/payment/PaymentModal"));
 
 const features = [
   {
@@ -142,6 +147,11 @@ const faqItems = [
     answer:
       "Sim, vale reenviar o currículo atualizado. Assim você compara a nova nota, valida as melhorias e identifica os próximos ajustes.",
   },
+  {
+    question: "Posso cancelar ou pedir reembolso?",
+    answer:
+      "Você pode cancelar a renovação da assinatura pela sua conta. Solicitações relacionadas a cobranças ou reembolso são analisadas pelo suporte conforme o status do pagamento e as regras aplicáveis.",
+  },
 ];
 
 const reportPreview = [
@@ -199,7 +209,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="animated-page-bg min-h-screen overflow-hidden">
+    <div className="animated-page-bg min-h-screen overflow-hidden pb-20 sm:pb-0">
       <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-xl border-b border-border/50 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <button
@@ -219,6 +229,7 @@ export default function Landing() {
               type="button"
               variant="ghost"
               size="sm"
+              className="hidden sm:inline-flex"
               onClick={() => document.getElementById("faq")?.scrollIntoView({ behavior: "smooth" })}
             >
               FAQ
@@ -264,13 +275,11 @@ export default function Landing() {
         </div>
       </nav>
 
-      <section className="relative pt-32 pb-20 px-6">
+      <section className="relative px-5 pb-14 pt-28 sm:px-6 md:pb-20 md:pt-32">
         <div className="animated-grid-bg pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
         <div className="relative z-10 max-w-4xl mx-auto text-center">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            initial={false}
           >
             <motion.div
               whileHover={{ scale: 1.04, rotate: -1 }}
@@ -285,12 +294,11 @@ export default function Landing() {
               <span className="text-primary">oportunidades de entrevista.</span>
             </h1>
 
-            <p className="text-lg md:text-xl text-muted-foreground mt-6 max-w-2xl mx-auto leading-relaxed">
-              Envie seu currículo e deixe nossa IA analisar tudo em segundos.
-              Receba uma nota ATS, descubra palavras-chave ausentes e encontre vagas ideais.
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg md:mt-6 md:text-xl">
+              Envie seu currículo, receba sua nota ATS e descubra as melhorias que mais aproximam você das vagas certas.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:mt-10 sm:flex-row sm:gap-4">
               <Button
                 type="button"
                 size="lg"
@@ -314,16 +322,16 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 px-6 bg-muted/30">
+      <section className="bg-muted/30 px-5 py-14 sm:px-6 md:py-20">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
+          <div className="mb-9 text-center md:mb-14">
             <h2 className="text-3xl font-bold text-foreground">Como funciona</h2>
-            <p className="text-muted-foreground mt-3">
-              Três passos simples para chegar mais perto da vaga ideal
+            <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+              Envie, entenda o diagnóstico e aplique as melhorias.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid gap-4 md:grid-cols-3 md:gap-8">
             {features.map((f, i) => (
               <motion.div
                 key={i}
@@ -331,7 +339,7 @@ export default function Landing() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.15 }}
-                className="interactive-card bg-card rounded-2xl p-8 border border-border/50 hover:border-primary/20"
+                className="interactive-card rounded-2xl border border-border/50 bg-card p-6 hover:border-primary/20 md:p-8"
               >
                 <div className="icon-float w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-5">
                   <f.icon className="w-6 h-6 text-primary" />
@@ -344,7 +352,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 px-6">
+      <section className="px-5 py-14 sm:px-6 md:py-20">
         <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-12 items-center">
           <div className="flex-1">
             <h2 className="text-3xl font-bold text-foreground mb-4">
@@ -391,7 +399,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 px-6 bg-muted/30">
+      <section className="bg-muted/30 px-5 py-14 sm:px-6 md:py-20">
         <div className="max-w-6xl mx-auto grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
@@ -454,7 +462,7 @@ export default function Landing() {
               {[
                 ["Adicionar palavras-chave", "React, CRM, indicadores e automação aparecem nas vagas ideais."],
                 ["Trocar frases genéricas", "Substitua responsabilidades vagas por impacto mensurável."],
-                ["Candidatar com foco", "Até 8 vagas podem aparecer com match alto para seu perfil atual."],
+                ["Candidatar com foco", "Até 8 anúncios reais e verificados podem aparecer, quando houver aderência mínima ao seu perfil."],
               ].map(([title, text]) => (
                 <div key={title} className="flex gap-3 rounded-xl bg-muted/40 p-4">
                   <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -471,7 +479,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 px-6">
+      <section className="px-5 py-14 sm:px-6 md:py-20">
         <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -547,7 +555,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-16 px-6 bg-muted/30">
+      <section className="bg-muted/30 px-5 py-12 sm:px-6 md:py-16">
         <div className="max-w-5xl mx-auto grid gap-6 md:grid-cols-3">
           {[
             {
@@ -579,7 +587,48 @@ export default function Landing() {
         </div>
       </section>
 
-      <section id="faq" className="py-20 px-6">
+      <section className="px-5 py-14 sm:px-6 md:py-20" aria-labelledby="commercial-trust-title">
+        <div className="mx-auto max-w-5xl">
+          <div className="mx-auto mb-9 max-w-2xl text-center">
+            <h2 id="commercial-trust-title" className="text-3xl font-bold text-foreground">
+              Teste com clareza antes de decidir
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Veja o formato do relatório, comece gratuitamente e mantenha o controle da assinatura e dos seus dados.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              {
+                icon: Eye,
+                title: "Relatório demonstrado",
+                text: "A prévia desta página mostra notas, prioridades e sugestões no mesmo formato entregue após a análise.",
+              },
+              {
+                icon: RotateCcw,
+                title: "Comece sem cobrança",
+                text: "O plano gratuito inclui análises mensais para você validar a experiência antes de escolher um plano pago.",
+              },
+              {
+                icon: HeartHandshake,
+                title: "Cobrança transparente",
+                text: "Preço e recorrência aparecem antes da confirmação. Cancelamentos ficam disponíveis na conta e dúvidas de cobrança vão para o suporte.",
+              },
+            ].map((item) => (
+              <Card key={item.title} className="border-border/50 p-5">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                  <item.icon className="h-5 w-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-foreground">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.text}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" className="px-5 py-14 sm:px-6 md:py-20">
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
@@ -628,11 +677,26 @@ export default function Landing() {
         </div>
       </footer>
 
-      <PaymentModal
-        open={showPayment}
-        onOpenChange={setShowPayment}
-        plan={selectedPlan}
-      />
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-border/70 bg-background/95 p-3 backdrop-blur-xl sm:hidden">
+        <Button
+          type="button"
+          className="h-12 w-full text-base font-semibold shadow-lg shadow-primary/20"
+          onClick={() => handleEnter("/upload")}
+        >
+          Analisar meu currículo
+          <ArrowRight className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {showPayment && (
+        <Suspense fallback={null}>
+          <PaymentModal
+            open={showPayment}
+            onOpenChange={setShowPayment}
+            plan={selectedPlan}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
